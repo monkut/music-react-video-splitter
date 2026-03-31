@@ -3,12 +3,13 @@ name = "music-react-video-splitter"
 version = "0.1.0"
 description = "CLI tool to split music reaction videos into individual segments using audio analysis"
 readme = "README.md"
-requires-python = ">=3.13"
+requires-python = ">=3.11,<3.12"
 dependencies = [
     "yt-dlp",
     "inaspeechsegmenter",
     "faster-whisper>=1.2.1",
-    "tensorflow>=2.21.0",
+    "tensorflow>=2.12,<2.16",
+    "numpy<1.24",
 ]
 
 [project.scripts]

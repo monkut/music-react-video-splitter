@@ -14,7 +14,7 @@ Built for YouTube live request streams where a reactor watches multiple songs pe
 
 ## Requirements
 
-- Python 3.13 (TensorFlow requires 3.13; 3.14 not yet supported)
+- Python 3.11 (inaSpeechSegmenter requires numpy<1.24 + TensorFlow<2.16)
 - [uv](https://docs.astral.sh/uv/)
 - ffmpeg (system install)
 
@@ -90,7 +90,7 @@ uv run python splitter.py VIDEO_URL --min-song 180
 
 ## Output
 
-Segments are saved as MP4 files named from the YouTube description timestamps when available:
+Segments are saved as MP4 files named from the YouTube description timestamps when available, along with a manifest CSV:
 
 ```
 output/
@@ -98,9 +98,19 @@ output/
   reaction_02_Elaphant_Gym_-_Dear_Humans.mp4
   reaction_03_YouTie_-_tsukinami.mp4
   ...
+  reaction_MANIFEST.csv
 ```
 
-If no description timestamps exist, segments are numbered sequentially.
+The manifest CSV contains metadata for each segment:
+
+```csv
+ORDER_INDEX,SPLIT_FILENAME,ORIGINAL_START_TIME,ORIGINAL_END_TIME,ARTIST,SONG
+1,reaction_01_welcome_back.mp4,0:00,8:13,,welcome back
+2,reaction_02_Elaphant_Gym_-_Dear_Humans.mp4,8:13,11:38,Elaphant Gym,Dear Humans
+3,reaction_03_YouTie_-_tsukinami.mp4,11:38,17:30,You&Tie,tsukinami
+```
+
+Artist and song are parsed from description track names (format: `Artist - Song`). If no description timestamps exist, segments are numbered sequentially and artist/song fields are empty.
 
 ## Detection pipeline
 
@@ -135,4 +145,5 @@ Mean offset: ~13 seconds on real boundaries.
 - Reactors who pause 2+ minutes mid-song create false split points (indistinguishable from between-song gaps via audio alone)
 - Transcription refinement requires a local GPU for reasonable speed (CPU works but slower)
 - First run downloads the Whisper model (~150MB for `base`)
+- Pinned to Python 3.11 and numpy<1.24 due to inaSpeechSegmenter compatibility
 - TensorFlow dependency from inaSpeechSegmenter is large (~2GB)

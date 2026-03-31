@@ -1,6 +1,7 @@
 """Split music reaction videos into individual segments using audio analysis."""
 
 import argparse
+import csv
 import json
 import os
 import re
@@ -10,6 +11,7 @@ import tempfile
 from pathlib import Path
 
 import numpy as np
+
 from inaSpeechSegmenter import Segmenter
 
 
@@ -448,6 +450,65 @@ def refine_splits_with_transcription(
     return refined
 
 
+def parse_artist_song(track_name: str) -> tuple[str, str]:
+    """Parse 'Artist - Song' from a track name string.
+
+    Handles formats like:
+      'Elaphant Gym - Dear Humans bass playthrough'
+      'X Japan - Orgasm live 1989'
+      'welcome back' (no separator -> artist='', song=track_name)
+    """
+    # Try common separators: ' - ', ' – ', ' — '
+    for sep in (" - ", " – ", " — "):
+        if sep in track_name:
+            artist, song = track_name.split(sep, 1)
+            return artist.strip(), song.strip()
+    # No separator found — treat entire string as song, no artist
+    return "", track_name.strip()
+
+
+def write_manifest(
+    output_dir: Path,
+    prefix: str,
+    split_files: list[Path],
+    boundaries: list[float],
+    track_names: list[str] | None,
+) -> Path:
+    """Write a manifest CSV with segment metadata.
+
+    Columns: ORDER_INDEX, SPLIT_FILENAME, ORIGINAL_START_TIME, ORIGINAL_END_TIME, ARTIST, SONG
+    """
+    manifest_path = output_dir / f"{prefix}_MANIFEST.csv"
+
+    with open(manifest_path, "w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow([
+            "ORDER_INDEX", "SPLIT_FILENAME",
+            "ORIGINAL_START_TIME", "ORIGINAL_END_TIME",
+            "ARTIST", "SONG",
+        ])
+
+        for i, split_file in enumerate(split_files):
+            start = boundaries[i]
+            end = boundaries[i + 1]
+
+            if track_names and i < len(track_names):
+                artist, song = parse_artist_song(track_names[i])
+            else:
+                artist, song = "", ""
+
+            writer.writerow([
+                i + 1,
+                split_file.name,
+                format_time(start),
+                format_time(end),
+                artist,
+                song,
+            ])
+
+    return manifest_path
+
+
 def split_video(
     video_path: Path,
     split_points: list[float],
@@ -654,10 +715,18 @@ def main():
             video_path, split_points, total_duration,
             output_dir, video_title, track_names,
         )
+
+        # Write manifest CSV
+        boundaries = [0.0] + split_points + [total_duration]
+        manifest = write_manifest(
+            output_dir, video_title, files, boundaries, track_names,
+        )
+
         print(f"\nDone! {len(files)} segments written to {output_dir}/")
         for f in files:
             size_mb = f.stat().st_size / 1024 / 1024
             print(f"  {f.name} ({size_mb:.1f} MB)")
+        print(f"  {manifest.name} (manifest)")
 
     # Cleanup temp audio
     if audio_path.exists():
