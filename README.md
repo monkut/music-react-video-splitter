@@ -14,7 +14,7 @@ Built for YouTube live request streams where a reactor watches multiple songs pe
 
 ## Requirements
 
-- Python 3.11+
+- Python 3.13 (TensorFlow requires 3.13; 3.14 not yet supported)
 - [uv](https://docs.astral.sh/uv/)
 - ffmpeg (system install)
 
