@@ -199,8 +199,8 @@ def validate_against_timestamps(
             if abs(offset) <= tolerance:
                 matched += 1
 
-            exp_str = f"{int(expected)//60}:{int(expected)%60:02d}"
-            det_str = f"{int(closest)//60}:{int(closest)%60:02d}"
+            exp_str = format_time(expected)
+            det_str = format_time(closest)
             name = expected_timestamps[i + 1][1] if i + 1 < len(expected_timestamps) else "?"
             print(f"  #{i+1}  Expected: {exp_str}  Detected: {det_str}  Offset: {offset:+.0f}s  [{status}]  {name}")
 

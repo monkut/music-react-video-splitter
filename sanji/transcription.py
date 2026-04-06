@@ -4,7 +4,7 @@ import re
 from pathlib import Path
 
 from sanji.audio import extract_gap_audio
-from sanji.settings import INTRO_PATTERNS
+from sanji.settings import DEFAULT_GAP_PADDING, INTRO_PATTERNS
 from sanji.utils import format_time
 
 
@@ -57,8 +57,8 @@ def refine_splits_with_transcription(
 
     refined = []
     for idx, sp in enumerate(split_points):
-        gap_start = song_regions[idx][1] if idx < len(song_regions) else sp - 60
-        gap_end = song_regions[idx + 1][0] if idx + 1 < len(song_regions) else sp + 60
+        gap_start = song_regions[idx][1] if idx < len(song_regions) else sp - DEFAULT_GAP_PADDING
+        gap_end = song_regions[idx + 1][0] if idx + 1 < len(song_regions) else sp + DEFAULT_GAP_PADDING
         gap_duration = gap_end - gap_start
 
         if gap_duration < 5:

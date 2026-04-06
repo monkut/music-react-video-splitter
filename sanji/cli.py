@@ -4,8 +4,6 @@ import argparse
 import tempfile
 from pathlib import Path
 
-import numpy as np
-
 from sanji.audio import classify_audio, extract_audio
 from sanji.functions import (
     compute_music_density,

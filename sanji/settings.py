@@ -20,6 +20,7 @@ SPLIT_GAP_BIAS = float(os.environ.get("SANJI_SPLIT_GAP_BIAS", "0.80"))
 
 # Transcription
 DEFAULT_WHISPER_MODEL = os.environ.get("SANJI_WHISPER_MODEL", "base")
+DEFAULT_GAP_PADDING = float(os.environ.get("SANJI_GAP_PADDING", "60.0"))
 
 # Validation
 VALIDATION_TOLERANCE = int(os.environ.get("SANJI_VALIDATION_TOLERANCE", "30"))
