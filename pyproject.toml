@@ -1,5 +1,5 @@
 [project]
-name = "music-react-video-splitter"
+name = "sanji"
 version = "0.1.0"
 description = "CLI tool to split music reaction videos into individual segments using audio analysis"
 readme = "README.md"
@@ -13,4 +13,4 @@ dependencies = [
 ]
 
 [project.scripts]
-splitter = "splitter:main"
+sanji = "sanji.cli:main"
