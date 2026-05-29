@@ -28,7 +28,8 @@ from sanji.utils import format_time
 from sanji.video import download_video, get_video_duration, split_video
 
 
-def main():
+def build_parser() -> argparse.ArgumentParser:
+    """Build the CLI argument parser."""
     parser = argparse.ArgumentParser(
         description="Split music reaction videos into individual segments"
     )
@@ -44,7 +45,11 @@ def main():
     parser.add_argument("--no-transcribe", action="store_true", help="Skip transcription-based split refinement")
     parser.add_argument("--whisper-model", default=DEFAULT_WHISPER_MODEL, help=f"Whisper model for transcription (default: {DEFAULT_WHISPER_MODEL})")
     parser.add_argument("--dry-run", action="store_true", help="Analyze only, don't split")
-    args = parser.parse_args()
+    return parser
+
+
+def main():
+    args = build_parser().parse_args()
 
     output_dir = Path(args.output)
     output_dir.mkdir(parents=True, exist_ok=True)
