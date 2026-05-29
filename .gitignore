@@ -3,6 +3,10 @@ __pycache__/
 *.pyc
 .venv/
 
+# Testing
+.pytest_cache/
+.hypothesis/
+
 # Project
 output/
 samples/
