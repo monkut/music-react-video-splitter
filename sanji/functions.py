@@ -148,7 +148,7 @@ def find_split_points(
 
 
 def parse_description_timestamps(
-    description: str, total_duration: float | None = None,
+    description: str | None, total_duration: float | None = None,
 ) -> list[tuple[float, str]]:
     """Parse timestamps from video description. Returns [(seconds, title), ...]."""
     if not description:
