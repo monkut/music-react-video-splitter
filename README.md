@@ -7,14 +7,14 @@ Built for YouTube live request streams where a reactor watches multiple songs pe
 ## How it works
 
 1. **Download** video from YouTube via yt-dlp
-2. **Classify** audio frames as speech/music/noise using inaSpeechSegmenter (CNN-based)
+2. **Classify** audio per second as music/speech/noise via the low-energy frame ratio heuristic + Silero VAD (no TensorFlow — see issue #17 benchmark)
 3. **Detect** song regions via sliding window music density analysis
 4. **Transcribe** gap audio with faster-whisper (word-level timestamps) to find intro phrases and artist/song names
 5. **Split** video at detected boundaries with ffmpeg
 
 ## Requirements
 
-- Python 3.11 (inaSpeechSegmenter requires numpy<1.24 + TensorFlow<2.16)
+- Python 3.14+
 - [uv](https://docs.astral.sh/uv/)
 - ffmpeg (system install)
 
@@ -26,7 +26,7 @@ cd music-react-video-splitter
 uv sync --extra ml
 ```
 
-> Dependencies are split into extras: `ml` (CLI / worker pipeline: TensorFlow, Whisper) and
+> Dependencies are split into extras: `ml` (CLI / worker pipeline: Whisper/VAD, numpy) and
 > `api` (SaaS service tier: Flask + Zappa, no ML deps). Install only what you need.
 
 ## Usage
@@ -66,7 +66,7 @@ uv run python splitter.py VIDEO_URL --whisper-model small
 
 ```bash
 # Adjust music detection sensitivity
-uv run python splitter.py VIDEO_URL --window 60 --threshold 0.20
+uv run python splitter.py VIDEO_URL --window 60 --threshold 0.50
 
 # Set minimum song region duration (seconds)
 uv run python splitter.py VIDEO_URL --min-segment 30
@@ -85,7 +85,7 @@ uv run python splitter.py VIDEO_URL --min-song 180
 | `--no-transcribe` | off | Skip transcription-based split refinement |
 | `--whisper-model` | `base` | Whisper model size (`tiny`, `base`, `small`, `medium`, `large`) |
 | `--window` | `60` | Sliding window size for music density (seconds) |
-| `--threshold` | `0.20` | Music density threshold (0-1) |
+| `--threshold` | `0.50` | Music density threshold (0-1) |
 | `--min-segment` | `30` | Minimum song region duration (seconds) |
 | `--min-song` | `60` | Minimum song duration before merging with neighbor (seconds) |
 | `--min-gap` | `5` | Minimum gap duration (seconds) |
@@ -121,7 +121,7 @@ Artist and song are parsed from description track names (format: `Artist - Song`
 YouTube URL
   -> yt-dlp download
   -> ffmpeg extract mono 16kHz WAV
-  -> inaSpeechSegmenter classify (speech/music/noise per frame)
+  -> low-energy heuristic + Silero VAD classify (music/speech/noise per second)
   -> sliding window music density -> song regions
   -> merge short regions (mid-song pause handling)
   -> 80% gap bias split placement
@@ -148,5 +148,3 @@ Mean offset: ~13 seconds on real boundaries.
 - Reactors who pause 2+ minutes mid-song create false split points (indistinguishable from between-song gaps via audio alone)
 - Transcription refinement requires a local GPU for reasonable speed (CPU works but slower)
 - First run downloads the Whisper model (~150MB for `base`)
-- Pinned to Python 3.11 and numpy<1.24 due to inaSpeechSegmenter compatibility
-- TensorFlow dependency from inaSpeechSegmenter is large (~2GB)

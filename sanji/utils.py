@@ -1,6 +1,5 @@
 """Shared utility functions."""
 
-import re
 
 
 def format_time(seconds: float) -> str:
