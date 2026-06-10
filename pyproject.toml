@@ -20,6 +20,7 @@ api = [
     "structlog>=24",
     "boto3>=1.34",
     "zappa>=0.59",
+    "sandjig",
 ]
 
 [project.scripts]
@@ -46,3 +47,7 @@ dev = [
 testpaths = ["tests"]
 addopts = "-ra -q"
 pythonpath = ["."]
+
+[tool.uv.sources]
+# TODO: flip back to monkut/sandjig.git main once monkut/sandjig#8 merges (packaging fix + resources template)
+sandjig = { git = "https://github.com/weyucou/sandjig.git", branch = "feature/7-embed-mode-resources-template" }

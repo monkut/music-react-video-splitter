@@ -1,4 +1,10 @@
-"""Tests for the sanji service tier (issue #7)."""
+"""Tests for the sanji service tier (issues #7, #13).
+
+The app is built USING sandjig (extend pattern): sandjig provides /jobs and
+/healthcheck; sanji adds /health, /plans, /me and owns the error handlers.
+AWS (DynamoDB, SQS) is mocked with moto; sandjig creates its tables at app
+construction inside the mock.
+"""
 
 import boto3
 import pytest
@@ -9,18 +15,21 @@ from sanji.service.plans import DEFAULT_PLAN_CODE, PLANS, get_plan
 from sanji.service.users import GOOGLE_SUB_INDEX, UserStore
 
 
-@pytest.fixture
-def client():
-    app = create_app()
-    app.config["TESTING"] = True
-    return app.test_client()
-
-
 @pytest.fixture(autouse=True)
 def aws_credentials(monkeypatch):
     monkeypatch.setenv("AWS_ACCESS_KEY_ID", "testing")
     monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "testing")
     monkeypatch.setenv("AWS_DEFAULT_REGION", "us-west-2")
+
+
+@pytest.fixture
+def client():
+    with mock_aws():
+        sqs = boto3.client("sqs", region_name="us-west-2")
+        queue_url = sqs.create_queue(QueueName="sanji-jobs-test")["QueueUrl"]
+        app = create_app(config_overrides={"SQS_QUEUE_URL": queue_url})
+        app.config["TESTING"] = True
+        yield app.test_client()
 
 
 @pytest.fixture
@@ -53,6 +62,11 @@ def test_health_returns_ok(client):
     assert "version" in response.json
 
 
+def test_sandjig_healthcheck_registered(client):
+    response = client.get("/healthcheck")
+    assert response.status_code == 200
+
+
 def test_plans_lists_three_tiers(client):
     response = client.get("/plans")
     assert response.status_code == 200
@@ -81,9 +95,33 @@ def test_me_returns_401_until_oauth_lands(client):
 
 
 def test_unknown_route_returns_404_json(client):
+    """sanji's JSON 404 must override sandjig's plain-text handler."""
     response = client.get("/nope")
     assert response.status_code == 404
     assert response.json["error"] == "not_found"
+
+
+def test_job_submit_and_poll(client):
+    """POST /jobs records the job (DynamoDB) and queues it (SQS); GET returns it."""
+    payload = {
+        "input_url": "https://www.youtube.com/watch?v=TESTVIDEO01",
+        "params": {"threshold": 0.5},
+    }
+    response = client.post("/jobs", json=payload)
+    assert response.status_code == 201, response.data
+    body = response.json
+    job_id = body["job_id"]
+    assert body["status"] == "queued"
+    assert body["request_payload"]["input_url"] == payload["input_url"]
+
+    poll = client.get(f"/jobs/{job_id}")
+    assert poll.status_code == 200
+    assert poll.json["job_id"] == job_id
+
+
+def test_job_submit_rejects_missing_input_url(client):
+    response = client.post("/jobs", json={"params": {}})
+    assert response.status_code in (400, 422)
 
 
 def test_get_plan_lookup():

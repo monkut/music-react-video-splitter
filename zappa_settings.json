@@ -1,6 +1,6 @@
 {
     "dev": {
-        "app_function": "sanji.service.app.app",
+        "app_function": "sanji.service.lambda_app.app",
         "aws_region": "us-west-2",
         "project_name": "sanji-api",
         "runtime": "python3.14",
@@ -10,7 +10,12 @@
         "memory_size": 256,
         "environment_variables": {
             "LOG_LEVEL": "INFO",
-            "SANJI_ENVIRONMENT": "dev"
+            "SANJI_ENVIRONMENT": "dev",
+            "AWS_ACCOUNT_ID": "610714125210",
+            "DYNAMODB_PROCESSINGJOB_REQUESTS_TABLENAME": "sanji-jobs-requests-dev",
+            "DYNAMODB_PROCESSINGJOB_SETTINGS_TABLENAME": "sanji-jobs-settings-dev",
+            "DYNAMODB_SORTINDEX_INDEXNAME": "sanji-jobs-sortindex-dev",
+            "PROCESSINGJOB_REQUEST_QUEUE_URL": "https://sqs.us-west-2.amazonaws.com/610714125210/sanji-sdjobs-eph-dev"
         },
         "exclude": [
             ".git",
