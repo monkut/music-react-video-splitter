@@ -1,0 +1,31 @@
+{
+    "dev": {
+        "app_function": "sanji.service.app.app",
+        "aws_region": "us-west-2",
+        "project_name": "sanji-api",
+        "runtime": "python3.11",
+        "s3_bucket": "sanji-api-zappa-610714125210-usw2",
+        "keep_warm": false,
+        "timeout_seconds": 30,
+        "memory_size": 256,
+        "environment_variables": {
+            "LOG_LEVEL": "INFO",
+            "SANJI_ENVIRONMENT": "dev"
+        },
+        "exclude": [
+            ".git",
+            ".venv",
+            "__pycache__",
+            "*.pyc",
+            "tests",
+            "test-reports",
+            ".idea",
+            ".github",
+            "*.md",
+            "*.egg-info",
+            "data",
+            "*.mp4",
+            "*.wav"
+        ]
+    }
+}
