@@ -28,7 +28,7 @@
             ".github",
             "*.md",
             "*.egg-info",
-            "data",
+            "data/bench",
             "*.mp4",
             "*.wav"
         ]
