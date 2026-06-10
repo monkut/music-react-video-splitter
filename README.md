@@ -23,8 +23,11 @@ Built for YouTube live request streams where a reactor watches multiple songs pe
 ```bash
 git clone https://github.com/monkut/music-react-video-splitter.git
 cd music-react-video-splitter
-uv sync
+uv sync --extra ml
 ```
+
+> Dependencies are split into extras: `ml` (CLI / worker pipeline: TensorFlow, Whisper) and
+> `api` (SaaS service tier: Flask + Zappa, no ML deps). Install only what you need.
 
 ## Usage
 

@@ -1,0 +1,109 @@
+"""Tests for the sanji service tier (issue #7)."""
+
+import boto3
+import pytest
+from moto import mock_aws
+
+from sanji.service.app import create_app
+from sanji.service.plans import DEFAULT_PLAN_CODE, PLANS, get_plan
+from sanji.service.users import GOOGLE_SUB_INDEX, UserStore
+
+
+@pytest.fixture
+def client():
+    app = create_app()
+    app.config["TESTING"] = True
+    return app.test_client()
+
+
+@pytest.fixture(autouse=True)
+def aws_credentials(monkeypatch):
+    monkeypatch.setenv("AWS_ACCESS_KEY_ID", "testing")
+    monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "testing")
+    monkeypatch.setenv("AWS_DEFAULT_REGION", "us-west-2")
+
+
+@pytest.fixture
+def users_table():
+    with mock_aws():
+        dynamodb = boto3.client("dynamodb", region_name="us-west-2")
+        dynamodb.create_table(
+            TableName="sanji-users",
+            AttributeDefinitions=[
+                {"AttributeName": "user_id", "AttributeType": "S"},
+                {"AttributeName": "google_sub", "AttributeType": "S"},
+            ],
+            KeySchema=[{"AttributeName": "user_id", "KeyType": "HASH"}],
+            GlobalSecondaryIndexes=[
+                {
+                    "IndexName": GOOGLE_SUB_INDEX,
+                    "KeySchema": [{"AttributeName": "google_sub", "KeyType": "HASH"}],
+                    "Projection": {"ProjectionType": "ALL"},
+                }
+            ],
+            BillingMode="PAY_PER_REQUEST",
+        )
+        yield
+
+
+def test_health_returns_ok(client):
+    response = client.get("/health")
+    assert response.status_code == 200
+    assert response.json["status"] == "ok"
+    assert "version" in response.json
+
+
+def test_plans_lists_three_tiers(client):
+    response = client.get("/plans")
+    assert response.status_code == 200
+    plans = response.json["plans"]
+    assert [p["code"] for p in plans] == ["free", "pro", "business"]
+
+
+def test_plans_match_decided_tiers(client):
+    """Tiers decided 2026-06-10 (issue #5)."""
+    plans = {p["code"]: p for p in client.get("/plans").json["plans"]}
+    assert plans["free"]["price_cents"] == 0
+    assert plans["free"]["monthly_stream_limit"] == 2
+    assert plans["free"]["max_video_duration_seconds"] == 2 * 60 * 60
+    assert plans["pro"]["price_cents"] == 1900
+    assert plans["pro"]["monthly_stream_limit"] == 10
+    assert plans["pro"]["max_video_duration_seconds"] == 4 * 60 * 60
+    assert plans["business"]["price_cents"] == 4900
+    assert plans["business"]["monthly_stream_limit"] is None
+    assert plans["business"]["max_video_duration_seconds"] == 8 * 60 * 60
+
+
+def test_me_returns_401_until_oauth_lands(client):
+    response = client.get("/me")
+    assert response.status_code == 401
+    assert response.json["error"] == "unauthorized"
+
+
+def test_unknown_route_returns_404_json(client):
+    response = client.get("/nope")
+    assert response.status_code == 404
+    assert response.json["error"] == "not_found"
+
+
+def test_get_plan_lookup():
+    assert get_plan("pro") is not None
+    assert get_plan("nonexistent") is None
+    assert get_plan(DEFAULT_PLAN_CODE) == PLANS[0]
+
+
+def test_user_store_create_and_get(users_table):
+    store = UserStore()
+    created = store.create(google_sub="g-123", email="a@example.com", display_name="A")
+    assert created.current_plan_code == DEFAULT_PLAN_CODE
+
+    fetched = store.get(created.user_id)
+    assert fetched is not None
+    assert fetched.google_sub == "g-123"
+
+    by_sub = store.get_by_google_sub("g-123")
+    assert by_sub is not None
+    assert by_sub.user_id == created.user_id
+
+    assert store.get("missing") is None
+    assert store.get_by_google_sub("missing") is None
