@@ -70,16 +70,37 @@ class TestMain:
         assert exc.value.code == 1
         assert "file not found" in capsys.readouterr().out
 
-    def test_dry_run_pipeline_with_mocked_classifier(self, local_video, tmp_path, monkeypatch, capsys):
+    def test_dry_run_pipeline_with_mocked_classifier(
+        self, local_video, tmp_path, monkeypatch, capsys
+    ):
         out_dir = tmp_path / "out"
-        monkeypatch.setattr(sys, "argv", [
-            "sanji", str(local_video), "-o", str(out_dir),
-            "--dry-run", "--no-transcribe",
-            "--threshold", "0.15", "--min-segment", "30", "--min-song", "30",
-        ])
-        with mock.patch("sanji.cli.get_video_duration", return_value=300.0) as m_dur, \
-                mock.patch("sanji.cli.extract_audio") as m_extract, \
-                mock.patch("sanji.cli.classify_audio", return_value=_fake_segments()) as m_classify:
+        monkeypatch.setattr(
+            sys,
+            "argv",
+            [
+                "sanji",
+                str(local_video),
+                "-o",
+                str(out_dir),
+                "--dry-run",
+                "--no-transcribe",
+                "--threshold",
+                "0.15",
+                "--min-segment",
+                "30",
+                "--min-song",
+                "30",
+            ],
+        )
+        with (
+            mock.patch(
+                "sanji.pipeline.get_video_duration", return_value=300.0
+            ) as m_dur,
+            mock.patch("sanji.pipeline.extract_audio") as m_extract,
+            mock.patch(
+                "sanji.pipeline.classify_audio", return_value=_fake_segments()
+            ) as m_classify,
+        ):
             main()
 
         m_dur.assert_called_once()
@@ -89,19 +110,36 @@ class TestMain:
         assert "song regions" in out
         assert "Dry run" in out
 
-    def test_transcription_step_invoked_when_not_skipped(self, local_video, tmp_path, monkeypatch):
+    def test_transcription_step_invoked_when_not_skipped(
+        self, local_video, tmp_path, monkeypatch
+    ):
         out_dir = tmp_path / "out"
-        monkeypatch.setattr(sys, "argv", [
-            "sanji", str(local_video), "-o", str(out_dir), "--dry-run",
-            "--threshold", "0.15", "--min-segment", "30", "--min-song", "30",
-        ])
-        with mock.patch("sanji.cli.get_video_duration", return_value=300.0), \
-                mock.patch("sanji.cli.extract_audio"), \
-                mock.patch("sanji.cli.classify_audio", return_value=_fake_segments()), \
-                mock.patch(
-                    "sanji.cli.refine_splits_with_transcription",
-                    side_effect=lambda split_points, *a, **k: split_points,
-                ) as m_refine:
+        monkeypatch.setattr(
+            sys,
+            "argv",
+            [
+                "sanji",
+                str(local_video),
+                "-o",
+                str(out_dir),
+                "--dry-run",
+                "--threshold",
+                "0.15",
+                "--min-segment",
+                "30",
+                "--min-song",
+                "30",
+            ],
+        )
+        with (
+            mock.patch("sanji.pipeline.get_video_duration", return_value=300.0),
+            mock.patch("sanji.pipeline.extract_audio"),
+            mock.patch("sanji.pipeline.classify_audio", return_value=_fake_segments()),
+            mock.patch(
+                "sanji.pipeline.refine_splits_with_transcription",
+                side_effect=lambda split_points, *a, **k: split_points,
+            ) as m_refine,
+        ):
             main()
 
         m_refine.assert_called_once()
