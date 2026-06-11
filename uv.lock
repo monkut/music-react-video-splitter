@@ -1052,7 +1052,7 @@ wheels = [
 [[package]]
 name = "sandjig"
 version = "0.1.0"
-source = { git = "https://github.com/weyucou/sandjig.git?branch=feature%2F7-embed-mode-resources-template#2600e5c77d53490193fda512f534dd18a36ba624" }
+source = { git = "https://github.com/monkut/sandjig.git?branch=main#6d16ab12ab2cb60e4b3289092d5051cd2bdd7732" }
 dependencies = [
     { name = "boto3" },
     { name = "flask" },
@@ -1101,7 +1101,7 @@ requires-dist = [
     { name = "flask", marker = "extra == 'api'", specifier = ">=3" },
     { name = "numpy", marker = "extra == 'ml'" },
     { name = "pydantic", marker = "extra == 'api'", specifier = ">=2" },
-    { name = "sandjig", marker = "extra == 'api'", git = "https://github.com/weyucou/sandjig.git?branch=feature%2F7-embed-mode-resources-template" },
+    { name = "sandjig", marker = "extra == 'api'", git = "https://github.com/monkut/sandjig.git?branch=main" },
     { name = "structlog", marker = "extra == 'api'", specifier = ">=24" },
     { name = "yt-dlp", marker = "extra == 'ml'" },
     { name = "zappa", marker = "extra == 'api'", specifier = ">=0.59" },

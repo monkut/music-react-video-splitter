@@ -49,5 +49,4 @@ addopts = "-ra -q"
 pythonpath = ["."]
 
 [tool.uv.sources]
-# TODO: flip back to monkut/sandjig.git main once monkut/sandjig#8 merges (packaging fix + resources template)
-sandjig = { git = "https://github.com/weyucou/sandjig.git", branch = "feature/7-embed-mode-resources-template" }
+sandjig = { git = "https://github.com/monkut/sandjig.git", branch = "main" }
