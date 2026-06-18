@@ -36,7 +36,9 @@ class TestFormatTime:
     def test_truncates_fractional_seconds(self):
         assert format_time(65.9) == "1:05"
 
-    @given(st.floats(min_value=0, max_value=359999, allow_nan=False, allow_infinity=False))
+    @given(
+        st.floats(min_value=0, max_value=359999, allow_nan=False, allow_infinity=False)
+    )
     def test_roundtrips_to_floored_seconds(self, seconds):
         parts = [int(p) for p in format_time(seconds).split(":")]
         if len(parts) == 2:
@@ -45,11 +47,19 @@ class TestFormatTime:
             total = parts[0] * 3600 + parts[1] * 60 + parts[2]
         assert total == int(seconds)
 
-    @given(st.floats(min_value=0, max_value=3599.999, allow_nan=False, allow_infinity=False))
+    @given(
+        st.floats(
+            min_value=0, max_value=3599.999, allow_nan=False, allow_infinity=False
+        )
+    )
     def test_under_one_hour_has_no_hour_field(self, seconds):
         assert format_time(seconds).count(":") == 1
 
-    @given(st.floats(min_value=3600, max_value=359999, allow_nan=False, allow_infinity=False))
+    @given(
+        st.floats(
+            min_value=3600, max_value=359999, allow_nan=False, allow_infinity=False
+        )
+    )
     def test_one_hour_or_more_zero_pads_minutes_and_seconds(self, seconds):
         _, minutes, secs = format_time(seconds).split(":")
         assert len(minutes) == 2
@@ -60,13 +70,21 @@ class TestParseArtistSong:
     @pytest.mark.parametrize(
         ("track", "artist", "song"),
         [
-            ("Elephant Gym - Dear Humans bass playthrough", "Elephant Gym", "Dear Humans bass playthrough"),
+            (
+                "Elephant Gym - Dear Humans bass playthrough",
+                "Elephant Gym",
+                "Dear Humans bass playthrough",
+            ),
             ("X Japan - Orgasm live 1989", "X Japan", "Orgasm live 1989"),
             ("welcome back", "", "welcome back"),
             ("  spaced out  ", "", "spaced out"),
             ("A – B", "A", "B"),  # en dash separator
             ("A — B", "A", "B"),  # em dash separator
-            ("Artist - Song - Extended", "Artist", "Song - Extended"),  # split once only
+            (
+                "Artist - Song - Extended",
+                "Artist",
+                "Song - Extended",
+            ),  # split once only
         ],
     )
     def test_known_values(self, track, artist, song):

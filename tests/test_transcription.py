@@ -6,7 +6,10 @@ mocked so the pattern-matching logic runs without a model download or GPU.
 
 from unittest import mock
 
-from sanji.transcription import _find_pattern_timestamp, refine_splits_with_transcription
+from sanji.transcription import (
+    _find_pattern_timestamp,
+    refine_splits_with_transcription,
+)
 
 
 class _FakeWord:
@@ -50,8 +53,12 @@ class TestRefineSplitsWithTranscription:
             _FakeWord(1.6, 2.0, "we"),
             _FakeWord(2.1, 2.5, "have"),
         ]
-        with mock.patch("faster_whisper.WhisperModel", return_value=_model_returning(words)), \
-                mock.patch("sanji.transcription.extract_gap_audio"):
+        with (
+            mock.patch(
+                "faster_whisper.WhisperModel", return_value=_model_returning(words)
+            ),
+            mock.patch("sanji.transcription.extract_gap_audio"),
+        ):
             refined = refine_splits_with_transcription([180.0], song_regions, audio)
 
         # "next" abs time = gap_start(100) + 0.6 = 100.6; new split = max(100+2, 100.6-3) = 102.0
@@ -62,8 +69,12 @@ class TestRefineSplitsWithTranscription:
         audio.write_bytes(b"x")
         song_regions = [(0.0, 100.0), (200.0, 300.0)]
         words = [_FakeWord(0.0, 0.5, "hello"), _FakeWord(0.6, 1.0, "world")]
-        with mock.patch("faster_whisper.WhisperModel", return_value=_model_returning(words)), \
-                mock.patch("sanji.transcription.extract_gap_audio"):
+        with (
+            mock.patch(
+                "faster_whisper.WhisperModel", return_value=_model_returning(words)
+            ),
+            mock.patch("sanji.transcription.extract_gap_audio"),
+        ):
             refined = refine_splits_with_transcription([180.0], song_regions, audio)
 
         assert refined == [180.0]

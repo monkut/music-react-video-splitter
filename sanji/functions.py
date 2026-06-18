@@ -148,7 +148,8 @@ def find_split_points(
 
 
 def parse_description_timestamps(
-    description: str | None, total_duration: float | None = None,
+    description: str | None,
+    total_duration: float | None = None,
 ) -> list[tuple[float, str]]:
     """Parse timestamps from video description. Returns [(seconds, title), ...]."""
     if not description:
@@ -156,7 +157,9 @@ def parse_description_timestamps(
 
     timestamps = []
     for line in description.strip().split("\n"):
-        match = re.match(r"(\d+):(\d+)(?::(\d+))?\s*[-\u2013\u2014]\s*(.+)", line.strip())
+        match = re.match(
+            r"(\d+):(\d+)(?::(\d+))?\s*[-\u2013\u2014]\s*(.+)", line.strip()
+        )
         if match:
             groups = match.groups()
             if groups[2] is not None:
@@ -201,13 +204,21 @@ def validate_against_timestamps(
 
             exp_str = format_time(expected)
             det_str = format_time(closest)
-            name = expected_timestamps[i + 1][1] if i + 1 < len(expected_timestamps) else "?"
-            print(f"  #{i+1}  Expected: {exp_str}  Detected: {det_str}  Offset: {offset:+.0f}s  [{status}]  {name}")
+            name = (
+                expected_timestamps[i + 1][1]
+                if i + 1 < len(expected_timestamps)
+                else "?"
+            )
+            print(
+                f"  #{i + 1}  Expected: {exp_str}  Detected: {det_str}  Offset: {offset:+.0f}s  [{status}]  {name}"
+            )
 
     if offsets:
         print(f"\n  Mean offset error:    {np.mean(offsets):.1f}s")
         print(f"  Max offset error:     {max(offsets):.1f}s")
-        print(f"  Boundary accuracy:    {matched}/{len(song_starts)} within +/- {tolerance}s")
+        print(
+            f"  Boundary accuracy:    {matched}/{len(song_starts)} within +/- {tolerance}s"
+        )
 
 
 def select_best_splits(
@@ -224,7 +235,9 @@ def select_best_splits(
 
     for combo in combinations(range(len(split_points)), n_keep):
         candidate = [0.0] + [split_points[i] for i in combo] + [total_duration]
-        segment_durations = [candidate[j + 1] - candidate[j] for j in range(len(candidate) - 1)]
+        segment_durations = [
+            candidate[j + 1] - candidate[j] for j in range(len(candidate) - 1)
+        ]
         variance = np.var(segment_durations)
         if variance < best_variance:
             best_variance = variance
@@ -250,11 +263,16 @@ def write_manifest(
 
     with open(manifest_path, "w", newline="") as f:
         writer = csv.writer(f)
-        writer.writerow([
-            "ORDER_INDEX", "SPLIT_FILENAME",
-            "ORIGINAL_START_TIME", "ORIGINAL_END_TIME",
-            "ARTIST", "SONG",
-        ])
+        writer.writerow(
+            [
+                "ORDER_INDEX",
+                "SPLIT_FILENAME",
+                "ORIGINAL_START_TIME",
+                "ORIGINAL_END_TIME",
+                "ARTIST",
+                "SONG",
+            ]
+        )
 
         for i, split_file in enumerate(split_files):
             start = boundaries[i]
@@ -265,13 +283,15 @@ def write_manifest(
             else:
                 artist, song = "", ""
 
-            writer.writerow([
-                i + 1,
-                split_file.name,
-                format_time(start),
-                format_time(end),
-                artist,
-                song,
-            ])
+            writer.writerow(
+                [
+                    i + 1,
+                    split_file.name,
+                    format_time(start),
+                    format_time(end),
+                    artist,
+                    song,
+                ]
+            )
 
     return manifest_path

@@ -14,13 +14,18 @@ from typing import Any, cast
 
 import boto3
 import structlog
-from flask import Flask, Response, jsonify
+from flask import Flask, Response, jsonify, request
 from pydantic import BaseModel
 from werkzeug.exceptions import HTTPException
 
 from sandjig.jobsapi.dyanmodb.models import ItemDoesNotExistError, ProcessingJobModel
 
-from sanji.service.auth import CurrentUser, login_required
+from sanji.service.auth import (
+    CurrentUser,
+    handle_google_callback,
+    handle_google_login,
+    login_required,
+)
 from sanji.service.jobs import SanjiJobRequest, SanjiJobResult
 from sanji.service.logging_config import configure_logging
 from sanji.service.plans import PLANS
@@ -58,6 +63,13 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> Flask:
         config.update(config_overrides)
 
     app = create_sandjig_app(SanjiJobRequest, SanjiJobResult, config=config)
+
+    # Signed session cookie configuration.
+    app.secret_key = os.getenv("SECRET_KEY", "dev-secret-change-in-prod")
+    is_production = os.getenv("SANJI_ENVIRONMENT", "development") != "development"
+    app.config["SESSION_COOKIE_SECURE"] = is_production
+    app.config["SESSION_COOKIE_HTTPONLY"] = True
+    app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 
     @app.get("/health")
     def health() -> tuple[dict, int]:
@@ -113,6 +125,21 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> Flask:
             else None,
         }
         return body, 200
+
+    @app.get("/auth/google")
+    def google_login():
+        return handle_google_login()
+
+    @app.get("/auth/google/callback")
+    def google_callback():
+        return handle_google_callback(request)
+
+    @app.get("/auth/logout")
+    def logout() -> tuple[str, int]:
+        from flask import session as flask_session
+
+        flask_session.clear()
+        return "", 204
 
     # Later registration wins: these replace sandjig's plain-text handlers so
     # the host app owns error semantics (verified extend-pattern behavior).
