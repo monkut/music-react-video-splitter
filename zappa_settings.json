@@ -1,6 +1,7 @@
 {
     "dev": {
         "app_function": "sanji.service.lambda_app.app",
+        "log_level": "WARNING",
         "aws_region": "us-west-2",
         "project_name": "sanji-api",
         "runtime": "python3.14",
