@@ -2,6 +2,7 @@
     "dev": {
         "app_function": "sanji.service.lambda_app.app",
         "aws_region": "us-west-2",
+        "log_level": "WARNING",
         "project_name": "sanji-api",
         "runtime": "python3.14",
         "s3_bucket": "sanji-api-zappa-610714125210-usw2",
