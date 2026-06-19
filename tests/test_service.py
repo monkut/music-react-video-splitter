@@ -10,9 +10,13 @@ import boto3
 import pytest
 from moto import mock_aws
 
+from sandjig.jobsapi.dyanmodb.models import ProcessingJobModel
+
 from sanji.service.app import create_app
 from sanji.service.plans import DEFAULT_PLAN_CODE, PLANS, get_plan
 from sanji.service.users import GOOGLE_SUB_INDEX, UserStore
+
+RESULTS_BUCKET = "sanji-results-test"
 
 
 @pytest.fixture(autouse=True)
@@ -122,6 +126,43 @@ def test_job_submit_and_poll(client):
 def test_job_submit_rejects_missing_input_url(client):
     response = client.post("/jobs", json={"params": {}})
     assert response.status_code in (400, 422)
+
+
+def test_job_result_returns_presigned_urls(client, monkeypatch):
+    """GET /jobs/<id>/result turns stored S3 keys into presigned download URLs (#8)."""
+    monkeypatch.setenv("SANJI_RESULTS_BUCKET", RESULTS_BUCKET)
+    boto3.client("s3", region_name="us-west-2").create_bucket(
+        Bucket=RESULTS_BUCKET,
+        CreateBucketConfiguration={"LocationConstraint": "us-west-2"},
+    )
+    job_id = client.post("/jobs", json={"input_url": "https://youtu.be/x"}).json[
+        "job_id"
+    ]
+    job = ProcessingJobModel.get_processingjobmodel_item(job_id, as_dict=False)
+    job.update(
+        actions=[
+            ProcessingJobModel.response_payload.set(
+                {
+                    "segment_keys": [f"results/{job_id}/segments/segment_00.mp4"],
+                    "result_manifest_key": f"results/{job_id}/manifest.csv",
+                }
+            )
+        ]
+    )
+
+    response = client.get(f"/jobs/{job_id}/result")
+
+    assert response.status_code == 200
+    assert response.json["job_id"] == job_id
+    assert len(response.json["segment_urls"]) == 1
+    assert RESULTS_BUCKET in response.json["segment_urls"][0]
+    assert response.json["manifest_url"] is not None
+
+
+def test_job_result_returns_404_for_unknown_job(client):
+    response = client.get("/jobs/does-not-exist/result")
+    assert response.status_code == 404
+    assert response.json["error"] == "not_found"
 
 
 def test_get_plan_lookup():
