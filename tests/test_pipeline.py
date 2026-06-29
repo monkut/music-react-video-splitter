@@ -18,11 +18,15 @@ class TestCliAdapter:
 
     def test_builds_params_from_argv(self, monkeypatch, tmp_path):
         argv = [
-            "sanji", "https://youtu.be/abc",
-            "-o", str(tmp_path),
-            "--expect-songs", "3",
+            "sanji",
+            "https://youtu.be/abc",
+            "-o",
+            str(tmp_path),
+            "--expect-songs",
+            "3",
             "--no-transcribe",
-            "--threshold", "0.5",
+            "--threshold",
+            "0.5",
         ]
         monkeypatch.setattr(sys, "argv", argv)
 
@@ -44,7 +48,8 @@ class TestCliAdapter:
         monkeypatch.setattr(sys, "argv", ["sanji", str(missing)])
 
         with mock.patch.object(
-            cli, "run_pipeline",
+            cli,
+            "run_pipeline",
             side_effect=FileNotFoundError(f"file not found: {missing}"),
         ):
             with pytest.raises(SystemExit) as exc_info:
@@ -55,7 +60,9 @@ class TestCliAdapter:
 
 class TestRunPipeline:
     def test_missing_local_file_raises(self, tmp_path):
-        params = PipelineParams(input=str(tmp_path / "missing.mp4"), output_dir=tmp_path / "out")
+        params = PipelineParams(
+            input=str(tmp_path / "missing.mp4"), output_dir=tmp_path / "out"
+        )
         with pytest.raises(FileNotFoundError):
             run_pipeline(params)
 
@@ -70,9 +77,18 @@ class TestRunPipeline:
     @mock.patch("sanji.pipeline.extract_audio")
     @mock.patch("sanji.pipeline.get_video_duration")
     def test_local_file_orchestration(
-        self, mock_duration, mock_extract, mock_classify, mock_density,
-        mock_regions, mock_merge, mock_splits, mock_refine,
-        mock_manifest, mock_split, tmp_path,
+        self,
+        mock_duration,
+        mock_extract,
+        mock_classify,
+        mock_density,
+        mock_regions,
+        mock_merge,
+        mock_splits,
+        mock_refine,
+        mock_manifest,
+        mock_split,
+        tmp_path,
     ):
         video = tmp_path / "source.mp4"
         video.write_bytes(b"x")
@@ -119,8 +135,16 @@ class TestRunPipeline:
     @mock.patch("sanji.pipeline.extract_audio")
     @mock.patch("sanji.pipeline.get_video_duration")
     def test_dry_run_skips_splitting(
-        self, mock_duration, mock_extract, mock_classify, mock_density,
-        mock_regions, mock_merge, mock_splits, mock_split, tmp_path,
+        self,
+        mock_duration,
+        mock_extract,
+        mock_classify,
+        mock_density,
+        mock_regions,
+        mock_merge,
+        mock_splits,
+        mock_split,
+        tmp_path,
     ):
         video = tmp_path / "clip.mp4"
         video.write_bytes(b"x")
@@ -133,8 +157,10 @@ class TestRunPipeline:
         mock_splits.return_value = []
 
         params = PipelineParams(
-            input=str(video), output_dir=tmp_path / "out",
-            dry_run=True, no_transcribe=True,
+            input=str(video),
+            output_dir=tmp_path / "out",
+            dry_run=True,
+            no_transcribe=True,
         )
         result = run_pipeline(params)
 

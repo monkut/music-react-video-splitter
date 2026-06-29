@@ -57,8 +57,16 @@ def refine_splits_with_transcription(
 
     refined = []
     for idx, sp in enumerate(split_points):
-        gap_start = song_regions[idx][1] if idx < len(song_regions) else sp - DEFAULT_GAP_PADDING
-        gap_end = song_regions[idx + 1][0] if idx + 1 < len(song_regions) else sp + DEFAULT_GAP_PADDING
+        gap_start = (
+            song_regions[idx][1]
+            if idx < len(song_regions)
+            else sp - DEFAULT_GAP_PADDING
+        )
+        gap_end = (
+            song_regions[idx + 1][0]
+            if idx + 1 < len(song_regions)
+            else sp + DEFAULT_GAP_PADDING
+        )
         gap_duration = gap_end - gap_start
 
         if gap_duration < 5:
@@ -79,11 +87,13 @@ def refine_splits_with_transcription(
             for segment in segments:
                 if segment.words:
                     for word in segment.words:
-                        words.append((
-                            gap_start + word.start,
-                            gap_start + word.end,
-                            word.word.strip().lower(),
-                        ))
+                        words.append(
+                            (
+                                gap_start + word.start,
+                                gap_start + word.end,
+                                word.word.strip().lower(),
+                            )
+                        )
 
             if not words:
                 refined.append(sp)
@@ -96,12 +106,15 @@ def refine_splits_with_transcription(
             patterns = []
 
             if track_names and idx + 1 < len(track_names):
-                next_track = track_names[idx + 1] if idx + 1 < len(track_names) else None
+                next_track = (
+                    track_names[idx + 1] if idx + 1 < len(track_names) else None
+                )
                 if not next_track and idx + 2 < len(track_names):
                     next_track = track_names[idx + 2]
                 if next_track:
                     name_words = [
-                        w for w in re.split(r'[\s\-\u2013]+', next_track.lower())
+                        w
+                        for w in re.split(r"[\s\-\u2013]+", next_track.lower())
                         if len(w) >= 3 and w not in {"the", "and", "for", "from"}
                     ]
                     for nw in name_words:
@@ -122,16 +135,23 @@ def refine_splits_with_transcription(
                 new_sp = max(gap_start + 2, best_match_time - 3)
                 gap_s = format_time(gap_start)
                 gap_e = format_time(gap_end)
-                print(f"  Split {idx+1}: gap {gap_s}-{gap_e} | "
-                      f'found "{best_pattern}" at {format_time(best_match_time)} | '
-                      f"{format_time(sp)} -> {format_time(new_sp)}")
+                print(
+                    f"  Split {idx + 1}: gap {gap_s}-{gap_e} | "
+                    f'found "{best_pattern}" at {format_time(best_match_time)} | '
+                    f"{format_time(sp)} -> {format_time(new_sp)}"
+                )
                 refined.append(new_sp)
             else:
-                print(f"  Split {idx+1}: no intro found in gap "
-                      f"{format_time(gap_start)}-{format_time(gap_end)}, "
-                      f"keeping {format_time(sp)}")
-                print(f'           transcript: "{full_text[:120]}..."' if len(full_text) > 120
-                      else f'           transcript: "{full_text}"')
+                print(
+                    f"  Split {idx + 1}: no intro found in gap "
+                    f"{format_time(gap_start)}-{format_time(gap_end)}, "
+                    f"keeping {format_time(sp)}"
+                )
+                print(
+                    f'           transcript: "{full_text[:120]}..."'
+                    if len(full_text) > 120
+                    else f'           transcript: "{full_text}"'
+                )
                 refined.append(sp)
 
         finally:

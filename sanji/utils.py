@@ -1,7 +1,6 @@
 """Shared utility functions."""
 
 
-
 def format_time(seconds: float) -> str:
     """Format seconds as M:SS or H:MM:SS."""
     h = int(seconds) // 3600

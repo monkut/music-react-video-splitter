@@ -21,6 +21,8 @@ api = [
     "boto3>=1.34",
     "zappa>=0.59",
     "sandjig",
+    "google-auth>=2",
+    "google-auth-oauthlib>=1",
 ]
 # AWS Batch worker (#8): runs the pipeline (ml) and lands results in S3. Reuses
 # the sandjig job contracts (SanjiJobResult), so it carries sandjig + boto3.

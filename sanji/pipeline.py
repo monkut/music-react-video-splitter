@@ -65,7 +65,9 @@ class PipelineResult:
     manifest_path: Path | None = None
 
 
-def run_pipeline(params: PipelineParams, *, work_dir: Path | None = None) -> PipelineResult:
+def run_pipeline(
+    params: PipelineParams, *, work_dir: Path | None = None
+) -> PipelineResult:
     """Run the full split pipeline and return the result.
 
     ``work_dir`` is an optional scratch directory for downloads and intermediate
@@ -103,20 +105,24 @@ def run_pipeline(params: PipelineParams, *, work_dir: Path | None = None) -> Pip
 
     # Step 5: Compute music density
     times, densities = compute_music_density(
-        segments, total_duration,
+        segments,
+        total_duration,
         window_size=params.window,
     )
 
     # Step 6: Find song regions
     song_regions = find_song_regions(
-        times, densities,
+        times,
+        densities,
         threshold=params.threshold,
         min_song_duration=params.min_segment,
     )
 
     print(f"\nDetected {len(song_regions)} raw song regions:")
     for i, (start, end) in enumerate(song_regions):
-        print(f"  Region {i+1}: {format_time(start)} - {format_time(end)} ({format_time(end - start)})")
+        print(
+            f"  Region {i + 1}: {format_time(start)} - {format_time(end)} ({format_time(end - start)})"
+        )
 
     # Step 6b: Merge short regions (handles mid-song pauses)
     pre_merge_count = len(song_regions)
@@ -126,34 +132,44 @@ def run_pipeline(params: PipelineParams, *, work_dir: Path | None = None) -> Pip
         print(f"\nAfter merging short regions: {len(song_regions)} song regions")
     print(f"\nFinal {len(song_regions)} song regions:")
     for i, (start, end) in enumerate(song_regions):
-        print(f"  Song {i+1}: {format_time(start)} - {format_time(end)} ({format_time(end - start)})")
+        print(
+            f"  Song {i + 1}: {format_time(start)} - {format_time(end)} ({format_time(end - start)})"
+        )
 
     # Step 7: Find split points
     split_points = find_split_points(song_regions, total_duration)
 
     # Step 7b: If expect_songs is set, keep only the top N-1 splits
     if params.expect_songs and len(split_points) >= params.expect_songs:
-        split_points = select_best_splits(split_points, total_duration, params.expect_songs)
-        print(f"\n--expect-songs {params.expect_songs}: keeping {len(split_points)} splits (most balanced segments)")
+        split_points = select_best_splits(
+            split_points, total_duration, params.expect_songs
+        )
+        print(
+            f"\n--expect-songs {params.expect_songs}: keeping {len(split_points)} splits (most balanced segments)"
+        )
 
     print(f"\nInitial split points ({len(split_points)}):")
     for i, sp in enumerate(split_points):
-        print(f"  Split {i+1}: {format_time(sp)}")
+        print(f"  Split {i + 1}: {format_time(sp)}")
 
     # Step 8: Parse timestamps from description (used for transcription, validation, naming)
-    timestamps = parse_description_timestamps(description, total_duration) if description else []
+    timestamps = (
+        parse_description_timestamps(description, total_duration) if description else []
+    )
     track_names = [name for _, name in timestamps] if timestamps else None
 
     # Step 7c: Refine splits using transcription
     if not params.no_transcribe:
         split_points = refine_splits_with_transcription(
-            split_points, song_regions, audio_path,
+            split_points,
+            song_regions,
+            audio_path,
             whisper_model=params.whisper_model,
             track_names=track_names,
         )
         print(f"\nRefined split points ({len(split_points)}):")
         for i, sp in enumerate(split_points):
-            print(f"  Split {i+1}: {format_time(sp)}")
+            print(f"  Split {i + 1}: {format_time(sp)}")
 
     # Step 9: Validate if requested
     if params.validate and timestamps:
@@ -177,13 +193,21 @@ def run_pipeline(params: PipelineParams, *, work_dir: Path | None = None) -> Pip
         if video_title == "source":
             video_title = "reaction"
         files = split_video(
-            video_path, split_points, total_duration,
-            output_dir, video_title, track_names,
+            video_path,
+            split_points,
+            total_duration,
+            output_dir,
+            video_title,
+            track_names,
         )
 
         boundaries = [0.0] + split_points + [total_duration]
         manifest = write_manifest(
-            output_dir, video_title, files, boundaries, track_names,
+            output_dir,
+            video_title,
+            files,
+            boundaries,
+            track_names,
         )
         result.segment_files = files
         result.manifest_path = manifest
