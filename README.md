@@ -143,6 +143,40 @@ Tested on a 39-minute live request stream with 5 songs:
 
 Mean offset: ~13 seconds on real boundaries.
 
+## Deployment (SaaS service tier)
+
+The `api` extra runs the service tier on AWS Lambda via [Zappa](https://github.com/zappa/Zappa).
+
+Zappa is configured by `zappa_settings.json`. This file holds **environment-specific
+values** (AWS account ID, region, S3 deployment bucket, SQS queue URL, DynamoDB table
+names) and is therefore **not tracked in git** — it is listed in `.gitignore`. Each
+deployer creates their own copy locally.
+
+### Create `zappa_settings.json`
+
+```bash
+cp zappa_settings.example.json zappa_settings.json
+```
+
+Then edit the copy and replace the placeholder values for your AWS environment:
+
+| Key | Description |
+|-----|-------------|
+| `aws_region` | Region to deploy into (e.g. `us-west-2`) |
+| `s3_bucket` | Existing S3 bucket Zappa uses to upload the deployment package |
+| `environment_variables.AWS_ACCOUNT_ID` | Target AWS account ID |
+| `environment_variables.PROCESSINGJOB_REQUEST_QUEUE_URL` | SQS queue URL for the worker pipeline |
+| `environment_variables.DYNAMODB_*` | DynamoDB table / index names for the stage |
+| `log_level` | Zappa handler log level — `WARNING` keeps the full API Gateway event payload out of the logs (see #16) |
+
+### Deploy
+
+```bash
+uv sync --extra api
+uv run zappa deploy dev    # first deployment
+uv run zappa update dev    # subsequent deployments
+```
+
 ## Known limitations
 
 - Reactors who pause 2+ minutes mid-song create false split points (indistinguishable from between-song gaps via audio alone)
