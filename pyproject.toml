@@ -22,6 +22,17 @@ api = [
     "zappa>=0.59",
     "sandjig",
 ]
+# AWS Batch worker (#8): runs the pipeline (ml) and lands results in S3. Reuses
+# the sandjig job contracts (SanjiJobResult), so it carries sandjig + boto3.
+worker = [
+    "yt-dlp",
+    "faster-whisper>=1.2.1",
+    "numpy",
+    "boto3>=1.34",
+    "structlog>=24",
+    "pydantic>=2",
+    "sandjig",
+]
 
 [project.scripts]
 sanji = "sanji.cli:main"

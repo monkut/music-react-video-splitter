@@ -10,17 +10,21 @@ DynamoDB at app construction, so importing this module stays side-effect free).
 """
 
 import os
-from typing import Any
+from typing import Any, cast
 
+import boto3
 import structlog
 from flask import Flask, Response, jsonify
 from pydantic import BaseModel
 from werkzeug.exceptions import HTTPException
 
+from sandjig.jobsapi.dyanmodb.models import ItemDoesNotExistError, ProcessingJobModel
+
 from sanji.service.auth import CurrentUser, login_required
 from sanji.service.jobs import SanjiJobRequest, SanjiJobResult
 from sanji.service.logging_config import configure_logging
 from sanji.service.plans import PLANS
+from sanji.settings import PRESIGN_EXPIRY_SECONDS, RESULTS_BUCKET_ENV
 
 # PrintLoggerFactory has no stdlib logger name; bind the required `logger` field explicitly.
 logger = structlog.get_logger().bind(logger=__name__)
@@ -67,6 +71,48 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> Flask:
     @login_required
     def me(current_user: CurrentUser) -> tuple[dict, int]:
         return current_user.model_dump(), 200
+
+    @app.get("/jobs/<job_id>/result")
+    def job_result(job_id: str) -> tuple[dict, int]:
+        """Job status plus presigned download URLs for its result artifacts.
+
+        sandjig owns ``GET /jobs/<id>`` (status + raw keys); this companion route
+        turns the stored S3 keys into time-limited download URLs (#8).
+        """
+        try:
+            job = cast(
+                dict,
+                ProcessingJobModel.get_processingjobmodel_item(job_id, as_dict=True),
+            )
+        except ItemDoesNotExistError:
+            return {"error": "not_found"}, 404
+
+        payload = job.get("response_payload") or {}
+        bucket = os.getenv(RESULTS_BUCKET_ENV)
+        if not bucket:
+            logger.warning("results_bucket_unset", env=RESULTS_BUCKET_ENV)
+
+        s3 = boto3.client("s3")
+
+        def presign(key: str) -> str:
+            return s3.generate_presigned_url(
+                "get_object",
+                Params={"Bucket": bucket, "Key": key},
+                ExpiresIn=PRESIGN_EXPIRY_SECONDS,
+            )
+
+        manifest_key = payload.get("result_manifest_key")
+        body = {
+            "job_id": job_id,
+            "status": job.get("status"),
+            "segment_urls": [presign(key) for key in payload.get("segment_keys", [])]
+            if bucket
+            else [],
+            "manifest_url": presign(manifest_key)
+            if (bucket and manifest_key)
+            else None,
+        }
+        return body, 200
 
     # Later registration wins: these replace sandjig's plain-text handlers so
     # the host app owns error semantics (verified extend-pattern behavior).
