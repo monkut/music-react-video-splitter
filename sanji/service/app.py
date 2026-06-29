@@ -24,15 +24,12 @@ from sanji.service.auth import CurrentUser, login_required
 from sanji.service.jobs import SanjiJobRequest, SanjiJobResult
 from sanji.service.logging_config import configure_logging
 from sanji.service.plans import PLANS
-from sanji.worker import RESULTS_BUCKET_ENV
+from sanji.settings import PRESIGN_EXPIRY_SECONDS, RESULTS_BUCKET_ENV
 
 # PrintLoggerFactory has no stdlib logger name; bind the required `logger` field explicitly.
 logger = structlog.get_logger().bind(logger=__name__)
 
 API_VERSION = "0.2.0"
-
-# Presigned result URLs expire after this window (seconds).
-PRESIGN_EXPIRY_SECONDS = 3600
 
 
 class HealthResponse(BaseModel):

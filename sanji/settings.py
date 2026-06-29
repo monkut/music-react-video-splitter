@@ -51,3 +51,12 @@ INTRO_PATTERNS = [
 VIDEO_CRF = os.environ.get("SANJI_VIDEO_CRF", "18")
 VIDEO_PRESET = os.environ.get("SANJI_VIDEO_PRESET", "fast")
 AUDIO_BITRATE = os.environ.get("SANJI_AUDIO_BITRATE", "192k")
+
+# Batch worker — env var names and S3 layout
+JOB_MESSAGE_ENV = "SANJI_JOB_MESSAGE"
+RESULTS_BUCKET_ENV = "SANJI_RESULTS_BUCKET"
+RESULTS_ROOT = os.environ.get("SANJI_RESULTS_ROOT", "results")
+RESULT_MARKER_NAME = os.environ.get("SANJI_RESULT_MARKER_NAME", "result.json")
+
+# Presigned result URL TTL (seconds)
+PRESIGN_EXPIRY_SECONDS = int(os.environ.get("SANJI_PRESIGN_EXPIRY_SECONDS", "3600"))

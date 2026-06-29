@@ -32,16 +32,14 @@ from sanji.service.jobs import (
     SanjiJobRequest,
     SanjiJobResult,
 )
+from sanji.settings import (
+    JOB_MESSAGE_ENV,
+    RESULT_MARKER_NAME,
+    RESULTS_BUCKET_ENV,
+    RESULTS_ROOT,
+)
 
 logger = structlog.get_logger().bind(logger=__name__)
-
-# The worker reads its job message from this env var (set as a Batch container
-# override) or, failing that, from argv[1].
-JOB_MESSAGE_ENV = "SANJI_JOB_MESSAGE"
-# Destination bucket for results — provisioned by the infra stack (#11).
-RESULTS_BUCKET_ENV = "SANJI_RESULTS_BUCKET"
-RESULTS_ROOT = "results"
-RESULT_MARKER_NAME = "result.json"
 
 
 class ResultUploader:

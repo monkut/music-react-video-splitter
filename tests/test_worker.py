@@ -13,8 +13,8 @@ from moto import mock_aws
 
 from sanji.pipeline import PipelineResult
 from sanji.service.jobs import STATUS_COMPLETED, STATUS_ERROR, SanjiJobRequest
+from sanji.settings import RESULTS_ROOT
 from sanji.worker import (
-    RESULTS_ROOT,
     build_pipeline_params,
     parse_job_message,
     process_job,
