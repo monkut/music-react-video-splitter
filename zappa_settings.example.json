@@ -1,21 +1,22 @@
 {
     "dev": {
         "app_function": "sanji.service.lambda_app.app",
-        "aws_region": "us-west-2",
+        "aws_region": "<AWS_REGION>",
+        "log_level": "WARNING",
         "project_name": "sanji-api",
         "runtime": "python3.14",
-        "s3_bucket": "sanji-api-zappa-610714125210-usw2",
+        "s3_bucket": "sanji-api-zappa-<AWS_ACCOUNT_ID>-<REGION_SHORT>",
         "keep_warm": false,
         "timeout_seconds": 30,
         "memory_size": 256,
         "environment_variables": {
             "LOG_LEVEL": "INFO",
             "SANJI_ENVIRONMENT": "dev",
-            "AWS_ACCOUNT_ID": "610714125210",
+            "AWS_ACCOUNT_ID": "<AWS_ACCOUNT_ID>",
             "DYNAMODB_PROCESSINGJOB_REQUESTS_TABLENAME": "sanji-jobs-requests-dev",
             "DYNAMODB_PROCESSINGJOB_SETTINGS_TABLENAME": "sanji-jobs-settings-dev",
             "DYNAMODB_SORTINDEX_INDEXNAME": "sanji-jobs-sortindex-dev",
-            "PROCESSINGJOB_REQUEST_QUEUE_URL": "https://sqs.us-west-2.amazonaws.com/610714125210/sanji-sdjobs-eph-dev"
+            "PROCESSINGJOB_REQUEST_QUEUE_URL": "https://sqs.<AWS_REGION>.amazonaws.com/<AWS_ACCOUNT_ID>/sanji-sdjobs-eph-dev"
         },
         "exclude": [
             ".git",
