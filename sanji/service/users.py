@@ -65,6 +65,15 @@ class UserStore:
         item: dict[str, Any] | None = response.get("Item")
         return User.model_validate(item) if item else None
 
+    def update_stripe_customer(self, user_id: str, *, stripe_customer_id: str) -> None:
+        """Persist Stripe Customer ID for the user."""
+        now = datetime.now(UTC).isoformat()
+        self._table.update_item(
+            Key={"user_id": user_id},
+            UpdateExpression="SET stripe_customer_id = :cid, updated_at = :now",
+            ExpressionAttributeValues={":cid": stripe_customer_id, ":now": now},
+        )
+
     def get_by_google_sub(self, google_sub: str) -> User | None:
         response = self._table.query(
             IndexName=GOOGLE_SUB_INDEX,
