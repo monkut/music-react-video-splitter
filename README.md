@@ -167,6 +167,9 @@ Then edit the copy and replace the placeholder values for your AWS environment:
 | `environment_variables.AWS_ACCOUNT_ID` | Target AWS account ID |
 | `environment_variables.PROCESSINGJOB_REQUEST_QUEUE_URL` | SQS queue URL for the worker pipeline |
 | `environment_variables.DYNAMODB_*` | DynamoDB table / index names for the stage |
+| `environment_variables.STRIPE_SECRET_KEY` | Stripe secret key (from Stripe Dashboard → Developers → API keys) |
+| `environment_variables.STRIPE_WEBHOOK_SECRET` | Stripe webhook signing secret (from Dashboard → Webhooks → endpoint secret) |
+| `environment_variables.STRIPE_PUBLISHABLE_KEY` | Stripe publishable key (safe for client-side use) |
 | `log_level` | Zappa handler log level — `WARNING` keeps the full API Gateway event payload out of the logs (see #16) |
 
 ### Deploy

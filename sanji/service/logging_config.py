@@ -20,6 +20,8 @@ _SENSITIVE_KEYS = frozenset(
         "credit_card",
         "authorization",
         "api_key",
+        "stripe_secret_key",
+        "stripe_webhook_secret",
     }
 )
 

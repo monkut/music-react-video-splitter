@@ -33,7 +33,7 @@ from sanji.service.logging_config import configure_logging
 from sanji.service.plans import PLANS, get_plan
 from sanji.service.usage import UsageStore
 from sanji.service.users import UserStore
-from sanji.settings import PRESIGN_EXPIRY_SECONDS, RESULTS_BUCKET_ENV
+from sanji.settings import PRESIGN_EXPIRY_SECONDS, RESULTS_BUCKET_ENV, validate_stripe_env_vars
 
 # PrintLoggerFactory has no stdlib logger name; bind the required `logger` field explicitly.
 logger = structlog.get_logger().bind(logger=__name__)
@@ -58,6 +58,7 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> Flask:
     configure_logging(
         json_output=os.getenv("SANJI_ENVIRONMENT", "development") != "development"
     )
+    validate_stripe_env_vars()
 
     config: dict[str, Any] = {
         "API_TITLE": "sanji API",
