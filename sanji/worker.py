@@ -86,7 +86,11 @@ def parse_job_message(raw: str) -> tuple[str, SanjiJobRequest]:
 
 
 def build_pipeline_params(request: SanjiJobRequest, output_dir: Path) -> PipelineParams:
-    """Map the request payload onto ``PipelineParams``, honoring known overrides only."""
+    """Map the request payload onto ``PipelineParams``, honoring known overrides only.
+
+    ``max_duration_seconds`` may be injected by the API layer (via request.params)
+    when plan enforcement is needed. Unknown keys are silently dropped.
+    """
     tunable = {f.name for f in dataclasses.fields(PipelineParams)} - {
         "input",
         "output_dir",

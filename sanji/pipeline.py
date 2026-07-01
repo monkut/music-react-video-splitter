@@ -34,6 +34,10 @@ from sanji.utils import format_time
 from sanji.video import download_video, get_video_duration, split_video
 
 
+class DurationExceededError(ValueError):
+    """Raised when a video duration exceeds the plan's max-duration cap (enforcement B)."""
+
+
 @dataclass(frozen=True)
 class PipelineParams:
     """Tunable inputs for a single splitting run (CLI flags or job params)."""
@@ -51,6 +55,7 @@ class PipelineParams:
     no_transcribe: bool = False
     whisper_model: str = DEFAULT_WHISPER_MODEL
     dry_run: bool = False
+    max_duration_seconds: int | None = None  # None = unlimited (CLI / legacy paths)
 
 
 @dataclass
@@ -95,6 +100,12 @@ def run_pipeline(
     # Step 2: Get duration
     total_duration = get_video_duration(video_path)
     print(f"Video duration: {format_time(total_duration)}")
+
+    # Enforcement B: reject before any expensive processing if duration exceeds the cap.
+    if params.max_duration_seconds is not None and total_duration > params.max_duration_seconds:
+        raise DurationExceededError(
+            f"Video duration {total_duration:.0f}s exceeds plan cap of {params.max_duration_seconds}s"
+        )
 
     # Step 3: Extract audio
     audio_path = (work_dir or output_dir) / "audio.wav"

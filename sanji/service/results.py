@@ -135,7 +135,7 @@ def _extract_job_id(detail: dict) -> str | None:
         if env.get("name") == "SANJI_JOB_MESSAGE":
             try:
                 return json.loads(env["value"]).get("job_id")
-            except json.JSONDecodeError, KeyError:
+            except (json.JSONDecodeError, KeyError):
                 return None
     return None
 

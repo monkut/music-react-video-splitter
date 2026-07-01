@@ -10,17 +10,19 @@ DynamoDB at app construction, so importing this module stays side-effect free).
 """
 
 import os
+from datetime import UTC, datetime
 from typing import Any, cast
 
 import boto3
 import structlog
-from flask import Flask, Response, jsonify, request
+from flask import Flask, Response, jsonify, request, session
 from pydantic import BaseModel
 from werkzeug.exceptions import HTTPException
 
 from sandjig.jobsapi.dyanmodb.models import ItemDoesNotExistError, ProcessingJobModel
 
 from sanji.service.auth import (
+    SESSION_USER_ID,
     CurrentUser,
     handle_google_callback,
     handle_google_login,
@@ -28,7 +30,9 @@ from sanji.service.auth import (
 )
 from sanji.service.jobs import SanjiJobRequest, SanjiJobResult
 from sanji.service.logging_config import configure_logging
-from sanji.service.plans import PLANS
+from sanji.service.plans import PLANS, get_plan
+from sanji.service.usage import UsageStore
+from sanji.service.users import UserStore
 from sanji.settings import PRESIGN_EXPIRY_SECONDS, RESULTS_BUCKET_ENV
 
 # PrintLoggerFactory has no stdlib logger name; bind the required `logger` field explicitly.
@@ -70,6 +74,66 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> Flask:
     app.config["SESSION_COOKIE_SECURE"] = is_production
     app.config["SESSION_COOKIE_HTTPONLY"] = True
     app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+
+    @app.before_request
+    def handle_plan_enforcement():
+        """Enforce plan limits before sandjig enqueues a job.
+
+        Enforcement A: Returns HTTP 402 when the authenticated user's monthly
+        stream count has reached their plan cap.
+
+        Duration injection: Adds max_duration_seconds to the job params so the
+        async worker can enforce the per-video duration cap (enforcement B) without
+        needing to look up plan data from DynamoDB itself.
+
+        Unauthenticated requests pass through unchanged.
+        """
+        if request.method != "POST" or request.path != "/jobs":
+            return None
+
+        user_id: str | None = session.get(SESSION_USER_ID)
+        if not user_id:
+            return None
+
+        user = UserStore().get(user_id)
+        if user is None:
+            return None
+
+        plan = get_plan(user.current_plan_code)
+        if plan is None:
+            return None
+
+        period_key = datetime.now(UTC).strftime("%Y-%m")
+        current_count = UsageStore().get_monthly_count(user_id, period_key)
+        if current_count >= plan.monthly_stream_limit:
+            logger.info(
+                "plan_limit_reached",
+                user_id=user_id,
+                plan=user.current_plan_code,
+                count=current_count,
+                limit=plan.monthly_stream_limit,
+            )
+            return (
+                jsonify(
+                    error="plan_limit_exceeded",
+                    message=(
+                        f"Monthly stream limit of {plan.monthly_stream_limit} reached"
+                        f" for plan '{plan.code}'."
+                    ),
+                    limit=plan.monthly_stream_limit,
+                    current_count=current_count,
+                ),
+                402,
+            )
+
+        # Inject max_duration_seconds into params so the worker enforces duration (B).
+        # Overwrite the request's cached JSON so sandjig reads the augmented body.
+        body = dict(request.get_json(silent=True, force=True) or {})
+        params = dict(body.get("params") or {})
+        params.setdefault("max_duration_seconds", plan.max_video_duration_seconds)
+        body["params"] = params
+        request._cached_json = (body, body)  # type: ignore[assignment]
+        return None
 
     @app.get("/health")
     def health() -> tuple[dict, int]:
