@@ -1146,6 +1146,7 @@ api = [
     { name = "google-auth-oauthlib" },
     { name = "pydantic" },
     { name = "sandjig" },
+    { name = "stripe" },
     { name = "structlog" },
     { name = "zappa" },
 ]
@@ -1189,6 +1190,7 @@ requires-dist = [
     { name = "pydantic", marker = "extra == 'worker'", specifier = ">=2" },
     { name = "sandjig", marker = "extra == 'api'", git = "https://github.com/monkut/sandjig.git?branch=main" },
     { name = "sandjig", marker = "extra == 'worker'", git = "https://github.com/monkut/sandjig.git?branch=main" },
+    { name = "stripe", marker = "extra == 'api'", specifier = ">=15.3.0" },
     { name = "structlog", marker = "extra == 'api'", specifier = ">=24" },
     { name = "structlog", marker = "extra == 'worker'", specifier = ">=24" },
     { name = "yt-dlp", marker = "extra == 'ml'" },
@@ -1241,6 +1243,19 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/e8/c4/ba2f8066cceb6f23394729afe52f3bf7adec04bf9ed2c820b39e19299111/sortedcontainers-2.4.0.tar.gz", hash = "sha256:25caa5a06cc30b6b83d11423433f65d1f9d76c4c6a0c90e3379eaa43b9bfdb88", size = 30594, upload-time = "2021-05-16T22:03:42.897Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/32/46/9cb0e58b2deb7f82b84065f37f3bffeb12413f947f9388e4cac22c4621ce/sortedcontainers-2.4.0-py2.py3-none-any.whl", hash = "sha256:a163dcaede0f1c021485e957a39245190e74249897e2ae4b2aa38595db237ee0", size = 29575, upload-time = "2021-05-16T22:03:41.177Z" },
+]
+
+[[package]]
+name = "stripe"
+version = "15.3.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "requests" },
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/eb/07/aed5656b3fd89a36e80835fe62c668692ee4ebf3a935095933d03f67a47b/stripe-15.3.0.tar.gz", hash = "sha256:ff05524255f51bf7df0e5bc4a99dbd0f737afd05587b7657c82e0d99c7fc45a4", size = 1514134, upload-time = "2026-06-24T22:49:40.276Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/54/f4/0dcf5bc464941132e3b109d26086a8a0aae7e4ed7e0243a1c47084b4de4b/stripe-15.3.0-py3-none-any.whl", hash = "sha256:99c427d306d9348123e73da3f4f2cae0a5732cac9b703155dba0418e32d3cf1c", size = 2172165, upload-time = "2026-06-24T22:49:38.18Z" },
 ]
 
 [[package]]

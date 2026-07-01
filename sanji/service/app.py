@@ -30,6 +30,7 @@ from sanji.service.auth import (
 )
 from sanji.service.jobs import SanjiJobRequest, SanjiJobResult
 from sanji.service.logging_config import configure_logging
+from sanji.service.stripe_config import validate_stripe_env
 from sanji.service.plans import PLANS, get_plan
 from sanji.service.usage import UsageStore
 from sanji.service.users import UserStore
@@ -58,6 +59,7 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> Flask:
     configure_logging(
         json_output=os.getenv("SANJI_ENVIRONMENT", "development") != "development"
     )
+    validate_stripe_env()
 
     config: dict[str, Any] = {
         "API_TITLE": "sanji API",

@@ -25,6 +25,9 @@ def aws_credentials(monkeypatch):
     monkeypatch.setenv("AWS_ACCESS_KEY_ID", "testing")
     monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "testing")
     monkeypatch.setenv("AWS_DEFAULT_REGION", "us-west-2")
+    monkeypatch.setenv("STRIPE_SECRET_KEY", "sk_test_testing")
+    monkeypatch.setenv("STRIPE_WEBHOOK_SECRET", "whsec_testing")
+    monkeypatch.setenv("STRIPE_PUBLISHABLE_KEY", "pk_test_testing")
 
 
 @pytest.fixture
