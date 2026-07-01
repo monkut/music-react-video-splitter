@@ -14,6 +14,7 @@ from sandjig.jobsapi.dyanmodb.models import ProcessingJobModel
 
 from sanji.service.app import create_app
 from sanji.service.plans import DEFAULT_PLAN_CODE, PLANS, get_plan
+from sanji.service.usage import DEFAULT_USAGE_TABLE, UsageStore
 from sanji.service.users import GOOGLE_SUB_INDEX, UserStore
 
 RESULTS_BUCKET = "sanji-results-test"
@@ -79,17 +80,18 @@ def test_plans_lists_three_tiers(client):
 
 
 def test_plans_match_decided_tiers(client):
-    """Tiers decided 2026-06-10 (issue #5)."""
+    """Tiers decided 2026-06-10; updated 2026-07-01 (issue #5)."""
     plans = {p["code"]: p for p in client.get("/plans").json["plans"]}
+    two_hours = 2 * 60 * 60
     assert plans["free"]["price_cents"] == 0
     assert plans["free"]["monthly_stream_limit"] == 2
-    assert plans["free"]["max_video_duration_seconds"] == 2 * 60 * 60
+    assert plans["free"]["max_video_duration_seconds"] == two_hours
     assert plans["pro"]["price_cents"] == 1900
     assert plans["pro"]["monthly_stream_limit"] == 10
-    assert plans["pro"]["max_video_duration_seconds"] == 4 * 60 * 60
-    assert plans["business"]["price_cents"] == 4900
-    assert plans["business"]["monthly_stream_limit"] is None
-    assert plans["business"]["max_video_duration_seconds"] == 8 * 60 * 60
+    assert plans["pro"]["max_video_duration_seconds"] == two_hours
+    assert plans["business"]["price_cents"] == 3900
+    assert plans["business"]["monthly_stream_limit"] == 30
+    assert plans["business"]["max_video_duration_seconds"] == two_hours
 
 
 def test_me_returns_401_until_oauth_lands(client):
@@ -165,10 +167,138 @@ def test_job_result_returns_404_for_unknown_job(client):
     assert response.json["error"] == "not_found"
 
 
+@pytest.fixture
+def usage_table():
+    with mock_aws():
+        dynamodb = boto3.client("dynamodb", region_name="us-west-2")
+        dynamodb.create_table(
+            TableName=DEFAULT_USAGE_TABLE,
+            AttributeDefinitions=[
+                {"AttributeName": "user_id", "AttributeType": "S"},
+                {"AttributeName": "period_key", "AttributeType": "S"},
+            ],
+            KeySchema=[
+                {"AttributeName": "user_id", "KeyType": "HASH"},
+                {"AttributeName": "period_key", "KeyType": "RANGE"},
+            ],
+            BillingMode="PAY_PER_REQUEST",
+        )
+        yield
+
+
+@pytest.fixture
+def authed_client(users_table, usage_table):
+    """Test client with a logged-in user whose session is pre-populated."""
+    with mock_aws():
+        sqs = boto3.client("sqs", region_name="us-west-2")
+        queue_url = sqs.create_queue(QueueName="sanji-jobs-authed-test")["QueueUrl"]
+        app = create_app(config_overrides={"SQS_QUEUE_URL": queue_url})
+        app.config["TESTING"] = True
+        app.config["SECRET_KEY"] = "test-secret"
+
+        store = UserStore()
+        user = store.create(
+            google_sub="g-authed",
+            email="authed@example.com",
+            display_name="Authed User",
+        )
+
+        with app.test_client() as c:
+            with c.session_transaction() as sess:
+                sess["user_id"] = user.user_id
+            yield c, user
+
+
 def test_get_plan_lookup():
     assert get_plan("pro") is not None
     assert get_plan("nonexistent") is None
     assert get_plan(DEFAULT_PLAN_CODE) == PLANS[0]
+
+
+# ---------------------------------------------------------------------------
+# Usage store unit tests
+# ---------------------------------------------------------------------------
+
+
+def test_usage_store_increment_and_get(usage_table):
+    store = UsageStore()
+    assert store.get_monthly_count("u1", "2026-07") == 0
+    store.increment_monthly_count("u1", "2026-07")
+    assert store.get_monthly_count("u1", "2026-07") == 1
+    store.increment_monthly_count("u1", "2026-07")
+    assert store.get_monthly_count("u1", "2026-07") == 2
+
+
+def test_usage_store_independent_periods(usage_table):
+    store = UsageStore()
+    store.increment_monthly_count("u1", "2026-06")
+    assert store.get_monthly_count("u1", "2026-07") == 0
+    assert store.get_monthly_count("u1", "2026-06") == 1
+
+
+# ---------------------------------------------------------------------------
+# Plan enforcement — enforcement point A (monthly count gate, HTTP 402)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "plan_code,stream_limit",
+    [
+        ("free", 2),
+        ("pro", 10),
+        ("business", 30),
+    ],
+)
+def test_plan_limit_enforcement_blocks_at_cap(
+    authed_client, plan_code, stream_limit
+):
+    """Enforcement A: POST /jobs returns 402 when monthly limit is reached."""
+    client, user = authed_client
+    period_key = __import__("datetime").datetime.now(
+        __import__("datetime").timezone.utc
+    ).strftime("%Y-%m")
+
+    # Update user to the target plan.
+    boto3.resource("dynamodb", region_name="us-west-2").Table("sanji-users").update_item(
+        Key={"user_id": user.user_id},
+        UpdateExpression="SET current_plan_code = :p",
+        ExpressionAttributeValues={":p": plan_code},
+    )
+
+    # Fill the usage counter to the cap.
+    usage_store = UsageStore()
+    for _ in range(stream_limit):
+        usage_store.increment_monthly_count(user.user_id, period_key)
+
+    response = client.post(
+        "/jobs",
+        json={"input_url": "https://youtu.be/test", "params": {}},
+        content_type="application/json",
+    )
+    assert response.status_code == 402
+    assert response.json["error"] == "plan_limit_exceeded"
+    assert response.json["limit"] == stream_limit
+
+
+def test_plan_limit_allows_under_cap(authed_client):
+    """Enforcement A: POST /jobs succeeds when under the monthly limit."""
+    client, user = authed_client
+    response = client.post(
+        "/jobs",
+        json={"input_url": "https://youtu.be/test", "params": {}},
+        content_type="application/json",
+    )
+    assert response.status_code == 201
+
+
+def test_unauthenticated_job_submit_passes_enforcement(client):
+    """No session → enforcement hook is a no-op; sandjig processes normally."""
+    response = client.post(
+        "/jobs",
+        json={"input_url": "https://youtu.be/test"},
+        content_type="application/json",
+    )
+    assert response.status_code == 201
 
 
 def test_user_store_create_and_get(users_table):
