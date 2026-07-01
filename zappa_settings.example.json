@@ -17,9 +17,12 @@
             "DYNAMODB_PROCESSINGJOB_SETTINGS_TABLENAME": "sanji-jobs-settings-dev",
             "DYNAMODB_SORTINDEX_INDEXNAME": "sanji-jobs-sortindex-dev",
             "PROCESSINGJOB_REQUEST_QUEUE_URL": "https://sqs.<AWS_REGION>.amazonaws.com/<AWS_ACCOUNT_ID>/sanji-sdjobs-eph-dev",
-            "STRIPE_SECRET_KEY": "<STRIPE_SECRET_KEY>",
-            "STRIPE_WEBHOOK_SECRET": "<STRIPE_WEBHOOK_SECRET>",
-            "STRIPE_PUBLISHABLE_KEY": "<STRIPE_PUBLISHABLE_KEY>"
+            "STRIPE_SECRET_KEY": "sk_test_<YOUR_STRIPE_SECRET_KEY>",
+            "STRIPE_WEBHOOK_SECRET": "whsec_<YOUR_STRIPE_WEBHOOK_SECRET>",
+            "STRIPE_PUBLISHABLE_KEY": "pk_test_<YOUR_STRIPE_PUBLISHABLE_KEY>",
+            "SANJI_SUBSCRIPTIONS_TABLE": "sanji-subscriptions-dev",
+            "SANJI_WEBHOOK_EVENTS_TABLE": "sanji-webhook-events-dev",
+            "SANJI_RESULTS_BUCKET": "<SANJI_RESULTS_BUCKET>"
         },
         "exclude": [
             ".git",

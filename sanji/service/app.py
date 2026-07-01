@@ -28,6 +28,11 @@ from sanji.service.auth import (
     handle_google_login,
     login_required,
 )
+from sanji.service.billing import (
+    BillingService,
+    handle_checkout,
+    handle_stripe_webhook,
+)
 from sanji.service.jobs import SanjiJobRequest, SanjiJobResult
 from sanji.service.logging_config import configure_logging
 from sanji.service.plans import PLANS, get_plan
@@ -198,6 +203,15 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> Flask:
     @app.get("/auth/google/callback")
     def google_callback():
         return handle_google_callback(request)
+
+    @app.post("/billing/checkout")
+    @login_required
+    def billing_checkout(current_user: CurrentUser) -> tuple[dict, int]:
+        return handle_checkout(current_user, BillingService())
+
+    @app.post("/webhooks/stripe")
+    def stripe_webhook() -> tuple[dict, int]:
+        return handle_stripe_webhook(BillingService())
 
     @app.get("/auth/logout")
     def logout() -> tuple[str, int]:
