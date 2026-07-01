@@ -16,7 +16,10 @@
             "DYNAMODB_PROCESSINGJOB_REQUESTS_TABLENAME": "sanji-jobs-requests-dev",
             "DYNAMODB_PROCESSINGJOB_SETTINGS_TABLENAME": "sanji-jobs-settings-dev",
             "DYNAMODB_SORTINDEX_INDEXNAME": "sanji-jobs-sortindex-dev",
-            "PROCESSINGJOB_REQUEST_QUEUE_URL": "https://sqs.<AWS_REGION>.amazonaws.com/<AWS_ACCOUNT_ID>/sanji-sdjobs-eph-dev"
+            "PROCESSINGJOB_REQUEST_QUEUE_URL": "https://sqs.<AWS_REGION>.amazonaws.com/<AWS_ACCOUNT_ID>/sanji-sdjobs-eph-dev",
+            "STRIPE_SECRET_KEY": "<STRIPE_SECRET_KEY>",
+            "STRIPE_WEBHOOK_SECRET": "<STRIPE_WEBHOOK_SECRET>",
+            "STRIPE_PUBLISHABLE_KEY": "<STRIPE_PUBLISHABLE_KEY>"
         },
         "exclude": [
             ".git",

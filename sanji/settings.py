@@ -60,3 +60,23 @@ RESULT_MARKER_NAME = os.environ.get("SANJI_RESULT_MARKER_NAME", "result.json")
 
 # Presigned result URL TTL (seconds)
 PRESIGN_EXPIRY_SECONDS = int(os.environ.get("SANJI_PRESIGN_EXPIRY_SECONDS", "3600"))
+
+# Stripe env var names (values loaded at runtime via validate_stripe_env_vars)
+STRIPE_SECRET_KEY_ENV = "STRIPE_SECRET_KEY"
+STRIPE_WEBHOOK_SECRET_ENV = "STRIPE_WEBHOOK_SECRET"
+STRIPE_PUBLISHABLE_KEY_ENV = "STRIPE_PUBLISHABLE_KEY"
+
+_REQUIRED_STRIPE_VARS = (
+    STRIPE_SECRET_KEY_ENV,
+    STRIPE_WEBHOOK_SECRET_ENV,
+    STRIPE_PUBLISHABLE_KEY_ENV,
+)
+
+
+def validate_stripe_env_vars() -> None:
+    """Raise ValueError at app startup if any Stripe env var is absent."""
+    missing = [var for var in _REQUIRED_STRIPE_VARS if not os.getenv(var)]
+    if missing:
+        raise ValueError(
+            f"Missing required Stripe environment variable(s): {', '.join(missing)}"
+        )
