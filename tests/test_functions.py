@@ -1,8 +1,12 @@
 """Tests for sanji.functions — analysis, timestamps, and manifest generation."""
 
 import csv
+from itertools import combinations
 
 import numpy as np
+import pytest
+from hypothesis import given, settings
+from hypothesis import strategies as st
 
 from sanji.functions import (
     compute_music_density,
@@ -153,6 +157,59 @@ class TestSelectBestSplits:
             100.0,
             200.0,
         ]
+
+    def test_single_song_returns_no_splits(self):
+        assert select_best_splits([50.0, 100.0], total_duration=300, n_songs=1) == []
+
+    def test_fewer_candidates_than_needed_returns_all(self):
+        splits = [50.0, 100.0]
+        assert select_best_splits(splits, total_duration=300, n_songs=5) == splits
+
+    def test_completes_quickly_on_large_input(self):
+        """Regression for #41: 50 candidates / 15 songs was ~10^12 combinations."""
+        import time
+
+        splits = [float(x) for x in range(60, 5060, 100)]  # 50 candidates
+        started = time.perf_counter()
+        result = select_best_splits(splits, total_duration=5400.0, n_songs=15)
+        elapsed = time.perf_counter() - started
+        assert len(result) == 14
+        assert result == sorted(result)
+        assert elapsed < 5.0
+
+    @given(
+        points=st.lists(
+            st.floats(min_value=1.0, max_value=999.0),
+            min_size=1,
+            max_size=9,
+            unique=True,
+        ),
+        n_songs=st.integers(min_value=1, max_value=6),
+    )
+    @settings(deadline=None, max_examples=200)
+    def test_matches_brute_force_variance(self, points, n_songs):
+        """The DP must find a selection exactly as balanced as brute force."""
+        total_duration = 1000.0
+        result = select_best_splits(sorted(points), total_duration, n_songs)
+        n_keep = n_songs - 1
+        if n_keep <= 0:
+            assert result == []
+            return
+        if n_keep >= len(points):
+            assert result == sorted(points)
+            return
+
+        def variance(chosen):
+            boundaries = [0.0, *sorted(chosen), total_duration]
+            durations = [
+                boundaries[i + 1] - boundaries[i] for i in range(len(boundaries) - 1)
+            ]
+            return float(np.var(durations))
+
+        brute_best = min(
+            variance(combo) for combo in combinations(sorted(points), n_keep)
+        )
+        assert variance(result) == pytest.approx(brute_best)
 
 
 class TestValidateAgainstTimestamps:

@@ -226,26 +226,54 @@ def select_best_splits(
     total_duration: float,
     n_songs: int,
 ) -> list[float]:
-    """Keep only the N-1 most balanced splits from candidates."""
-    from itertools import combinations
+    """Keep only the N-1 most balanced splits from candidates.
 
+    Minimizing the variance of the segment durations is equivalent to
+    minimizing the sum of their squares: the mean duration is fixed at
+    total_duration / n_songs no matter which splits are chosen. That makes
+    this a standard O(n²·k) dynamic program over the sorted candidates —
+    the previous brute force enumerated all C(n, k) combinations (>1.3M
+    for 24 candidates and 12 songs) and ran np.var on each (#41).
+    """
     n_keep = n_songs - 1
-    best_combo = None
-    best_variance = float("inf")
+    n = len(split_points)
+    if n_keep <= 0:
+        return []
+    if n_keep >= n:
+        return split_points
 
-    for combo in combinations(range(len(split_points)), n_keep):
-        candidate = [0.0] + [split_points[i] for i in combo] + [total_duration]
-        segment_durations = [
-            candidate[j + 1] - candidate[j] for j in range(len(candidate) - 1)
-        ]
-        variance = np.var(segment_durations)
-        if variance < best_variance:
-            best_variance = variance
-            best_combo = combo
+    points = sorted(split_points)
+    infinity = float("inf")
 
-    if best_combo is not None:
-        return [split_points[i] for i in best_combo]
-    return split_points
+    # dp[m][j]: minimal sum of squared segment durations covering
+    # [0, points[j]] using m chosen splits, the m-th being points[j].
+    dp = [[infinity] * n for _ in range(n_keep + 1)]
+    parent = [[-1] * n for _ in range(n_keep + 1)]
+    for j in range(n):
+        dp[1][j] = points[j] ** 2
+    for m in range(2, n_keep + 1):
+        for j in range(m - 1, n):
+            best_cost = infinity
+            best_prev = -1
+            for i in range(m - 2, j):
+                cost = dp[m - 1][i] + (points[j] - points[i]) ** 2
+                if cost < best_cost:
+                    best_cost = cost
+                    best_prev = i
+            dp[m][j] = best_cost
+            parent[m][j] = best_prev
+
+    # close each candidate solution with the final segment up to total_duration
+    best_last = min(
+        range(n), key=lambda j: dp[n_keep][j] + (total_duration - points[j]) ** 2
+    )
+    chosen: list[float] = []
+    j = best_last
+    for m in range(n_keep, 0, -1):
+        chosen.append(points[j])
+        j = parent[m][j]
+    chosen.reverse()
+    return chosen
 
 
 def write_manifest(
