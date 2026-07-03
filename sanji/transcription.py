@@ -106,11 +106,7 @@ def refine_splits_with_transcription(
             patterns = []
 
             if track_names and idx + 1 < len(track_names):
-                next_track = (
-                    track_names[idx + 1] if idx + 1 < len(track_names) else None
-                )
-                if not next_track and idx + 2 < len(track_names):
-                    next_track = track_names[idx + 2]
+                next_track = track_names[idx + 1]
                 if next_track:
                     name_words = [
                         w

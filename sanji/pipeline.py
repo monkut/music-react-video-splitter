@@ -10,6 +10,8 @@ import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 
+import structlog
+
 from sanji.audio import classify_audio, extract_audio
 from sanji.functions import (
     compute_music_density,
@@ -32,6 +34,8 @@ from sanji.settings import (
 from sanji.transcription import refine_splits_with_transcription
 from sanji.utils import format_time
 from sanji.video import download_video, get_video_duration, split_video
+
+logger = structlog.get_logger().bind(logger=__name__)
 
 
 class DurationExceededError(ValueError):
@@ -70,6 +74,118 @@ class PipelineResult:
     manifest_path: Path | None = None
 
 
+def _load_video(
+    input_str: str, work_dir: Path | None
+) -> tuple[Path, str | None, Path | None]:
+    """Download or locate the video file; return (video_path, description, work_dir)."""
+    if input_str.startswith(("http://", "https://")):
+        if work_dir is None:
+            work_dir = Path(tempfile.mkdtemp(prefix="splitter_"))
+        video_path, description = download_video(input_str, work_dir)
+    else:
+        video_path = Path(input_str)
+        if not video_path.exists():
+            raise FileNotFoundError(f"file not found: {video_path}")
+        desc_path = video_path.with_suffix(".description")
+        description = desc_path.read_text() if desc_path.exists() else None
+    return video_path, description, work_dir
+
+
+def _detect_song_regions(
+    segments: list, total_duration: float, params: PipelineParams
+) -> list[tuple[float, float]]:
+    """Steps 5-6b: density → raw regions → merged regions."""
+    times, densities = compute_music_density(
+        segments, total_duration, window_size=params.window
+    )
+    song_regions = find_song_regions(
+        times, densities, threshold=params.threshold, min_song_duration=params.min_segment
+    )
+    logger.info(
+        "song_regions_detected",
+        count=len(song_regions),
+        regions=[(format_time(s), format_time(e)) for s, e in song_regions],
+    )
+
+    pre_merge = len(song_regions)
+    song_regions = merge_short_regions(song_regions, min_duration=params.min_song)
+    if len(song_regions) != pre_merge:
+        logger.info("song_regions_merged", before=pre_merge, after=len(song_regions))
+    logger.info(
+        "song_regions_final",
+        count=len(song_regions),
+        regions=[(format_time(s), format_time(e)) for s, e in song_regions],
+    )
+    return song_regions
+
+
+def _compute_split_points(
+    song_regions: list[tuple[float, float]],
+    total_duration: float,
+    audio_path: Path,
+    params: PipelineParams,
+    track_names: list[str] | None,
+) -> list[float]:
+    """Steps 7-7c: raw splits → filtered → transcription-refined."""
+    split_points = find_split_points(song_regions, total_duration)
+
+    if params.expect_songs and len(split_points) >= params.expect_songs:
+        split_points = select_best_splits(split_points, total_duration, params.expect_songs)
+        logger.info(
+            "split_points_trimmed",
+            expect_songs=params.expect_songs,
+            kept=len(split_points),
+        )
+
+    logger.info(
+        "split_points_initial",
+        count=len(split_points),
+        times=[format_time(sp) for sp in split_points],
+    )
+
+    if not params.no_transcribe:
+        split_points = refine_splits_with_transcription(
+            split_points,
+            song_regions,
+            audio_path,
+            whisper_model=params.whisper_model,
+            track_names=track_names,
+        )
+        logger.info(
+            "split_points_refined",
+            count=len(split_points),
+            times=[format_time(sp) for sp in split_points],
+        )
+
+    return split_points
+
+
+def _write_segments(
+    video_path: Path,
+    split_points: list[float],
+    total_duration: float,
+    output_dir: Path,
+    track_names: list[str] | None,
+) -> tuple[list[Path], Path]:
+    """Step 10: split video, write manifest, log results."""
+    video_title = video_path.stem
+    if video_title == "source":
+        video_title = "reaction"
+
+    files = split_video(video_path, split_points, total_duration, output_dir, video_title, track_names)
+    boundaries = [0.0] + split_points + [total_duration]
+    manifest = write_manifest(output_dir, video_title, files, boundaries, track_names)
+
+    logger.info(
+        "segments_written",
+        count=len(files),
+        output_dir=str(output_dir),
+        files=[{"name": f.name, "size_mb": round(f.stat().st_size / 1024 / 1024, 1)} for f in files],
+        manifest=manifest.name,
+    )
+    return files, manifest
+
+
 def run_pipeline(
     params: PipelineParams, *, work_dir: Path | None = None
 ) -> PipelineResult:
@@ -84,109 +200,35 @@ def run_pipeline(
     output_dir = params.output_dir
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    # Step 1: Get video
-    is_url = params.input.startswith(("http://", "https://"))
-    if is_url:
-        if work_dir is None:
-            work_dir = Path(tempfile.mkdtemp(prefix="splitter_"))
-        video_path, description = download_video(params.input, work_dir)
-    else:
-        video_path = Path(params.input)
-        if not video_path.exists():
-            raise FileNotFoundError(f"file not found: {video_path}")
-        desc_path = video_path.with_suffix(".description")
-        description = desc_path.read_text() if desc_path.exists() else None
+    video_path, description, work_dir = _load_video(params.input, work_dir)
 
-    # Step 2: Get duration
     total_duration = get_video_duration(video_path)
-    print(f"Video duration: {format_time(total_duration)}")
+    logger.info("video_duration", duration=format_time(total_duration))
 
-    # Enforcement B: reject before any expensive processing if duration exceeds the cap.
     if params.max_duration_seconds is not None and total_duration > params.max_duration_seconds:
         raise DurationExceededError(
             f"Video duration {total_duration:.0f}s exceeds plan cap of {params.max_duration_seconds}s"
         )
 
-    # Step 3: Extract audio
     audio_path = (work_dir or output_dir) / "audio.wav"
     extract_audio(video_path, audio_path)
-
-    # Step 4: Classify audio
     segments = classify_audio(audio_path)
 
-    # Step 5: Compute music density
-    times, densities = compute_music_density(
-        segments,
-        total_duration,
-        window_size=params.window,
-    )
+    song_regions = _detect_song_regions(segments, total_duration, params)
 
-    # Step 6: Find song regions
-    song_regions = find_song_regions(
-        times,
-        densities,
-        threshold=params.threshold,
-        min_song_duration=params.min_segment,
-    )
-
-    print(f"\nDetected {len(song_regions)} raw song regions:")
-    for i, (start, end) in enumerate(song_regions):
-        print(
-            f"  Region {i + 1}: {format_time(start)} - {format_time(end)} ({format_time(end - start)})"
-        )
-
-    # Step 6b: Merge short regions (handles mid-song pauses)
-    pre_merge_count = len(song_regions)
-    song_regions = merge_short_regions(song_regions, min_duration=params.min_song)
-
-    if len(song_regions) != pre_merge_count:
-        print(f"\nAfter merging short regions: {len(song_regions)} song regions")
-    print(f"\nFinal {len(song_regions)} song regions:")
-    for i, (start, end) in enumerate(song_regions):
-        print(
-            f"  Song {i + 1}: {format_time(start)} - {format_time(end)} ({format_time(end - start)})"
-        )
-
-    # Step 7: Find split points
-    split_points = find_split_points(song_regions, total_duration)
-
-    # Step 7b: If expect_songs is set, keep only the top N-1 splits
-    if params.expect_songs and len(split_points) >= params.expect_songs:
-        split_points = select_best_splits(
-            split_points, total_duration, params.expect_songs
-        )
-        print(
-            f"\n--expect-songs {params.expect_songs}: keeping {len(split_points)} splits (most balanced segments)"
-        )
-
-    print(f"\nInitial split points ({len(split_points)}):")
-    for i, sp in enumerate(split_points):
-        print(f"  Split {i + 1}: {format_time(sp)}")
-
-    # Step 8: Parse timestamps from description (used for transcription, validation, naming)
     timestamps = (
         parse_description_timestamps(description, total_duration) if description else []
     )
     track_names = [name for _, name in timestamps] if timestamps else None
 
-    # Step 7c: Refine splits using transcription
-    if not params.no_transcribe:
-        split_points = refine_splits_with_transcription(
-            split_points,
-            song_regions,
-            audio_path,
-            whisper_model=params.whisper_model,
-            track_names=track_names,
-        )
-        print(f"\nRefined split points ({len(split_points)}):")
-        for i, sp in enumerate(split_points):
-            print(f"  Split {i + 1}: {format_time(sp)}")
+    split_points = _compute_split_points(
+        song_regions, total_duration, audio_path, params, track_names
+    )
 
-    # Step 9: Validate if requested
     if params.validate and timestamps:
         validate_against_timestamps(split_points, timestamps)
     elif params.validate:
-        print("\nNo timestamps found in description for validation")
+        logger.info("validation_skipped_no_timestamps")
 
     result = PipelineResult(
         duration=total_duration,
@@ -195,41 +237,15 @@ def run_pipeline(
         track_names=track_names,
     )
 
-    # Step 10: Split video
     if params.dry_run:
-        print("\n[Dry run] Skipping video splitting")
+        logger.info("dry_run_skipping_split")
     else:
-        print(f"\nSplitting video into {len(split_points) + 1} segments...")
-        video_title = video_path.stem
-        if video_title == "source":
-            video_title = "reaction"
-        files = split_video(
-            video_path,
-            split_points,
-            total_duration,
-            output_dir,
-            video_title,
-            track_names,
-        )
-
-        boundaries = [0.0] + split_points + [total_duration]
-        manifest = write_manifest(
-            output_dir,
-            video_title,
-            files,
-            boundaries,
-            track_names,
+        files, manifest = _write_segments(
+            video_path, split_points, total_duration, output_dir, track_names
         )
         result.segment_files = files
         result.manifest_path = manifest
 
-        print(f"\nDone! {len(files)} segments written to {output_dir}/")
-        for f in files:
-            size_mb = f.stat().st_size / 1024 / 1024
-            print(f"  {f.name} ({size_mb:.1f} MB)")
-        print(f"  {manifest.name} (manifest)")
-
-    # Cleanup temp audio
     if audio_path.exists():
         audio_path.unlink()
 
