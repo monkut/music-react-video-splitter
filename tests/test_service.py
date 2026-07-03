@@ -107,8 +107,9 @@ def test_unknown_route_returns_404_json(client):
     assert response.json["error"] == "not_found"
 
 
-def test_job_submit_and_poll(client):
+def test_job_submit_and_poll(authed_client):
     """POST /jobs records the job (DynamoDB) and queues it (SQS); GET returns it."""
+    client, user = authed_client
     payload = {
         "input_url": "https://www.youtube.com/watch?v=TESTVIDEO01",
         "params": {"threshold": 0.5},
@@ -125,13 +126,15 @@ def test_job_submit_and_poll(client):
     assert poll.json["job_id"] == job_id
 
 
-def test_job_submit_rejects_missing_input_url(client):
+def test_job_submit_rejects_missing_input_url(authed_client):
+    client, _user = authed_client
     response = client.post("/jobs", json={"params": {}})
     assert response.status_code in (400, 422)
 
 
-def test_job_result_returns_presigned_urls(client, monkeypatch):
+def test_job_result_returns_presigned_urls(authed_client, monkeypatch):
     """GET /jobs/<id>/result turns stored S3 keys into presigned download URLs (#8)."""
+    client, user = authed_client
     monkeypatch.setenv("SANJI_RESULTS_BUCKET", RESULTS_BUCKET)
     boto3.client("s3", region_name="us-west-2").create_bucket(
         Bucket=RESULTS_BUCKET,
@@ -161,10 +164,129 @@ def test_job_result_returns_presigned_urls(client, monkeypatch):
     assert response.json["manifest_url"] is not None
 
 
-def test_job_result_returns_404_for_unknown_job(client):
+def test_job_result_returns_404_for_unknown_job(authed_client):
+    client, _user = authed_client
     response = client.get("/jobs/does-not-exist/result")
     assert response.status_code == 404
     assert response.json["error"] == "not_found"
+
+
+# ---------------------------------------------------------------------------
+# Jobs API authentication, attribution, ownership (#30)
+# ---------------------------------------------------------------------------
+
+
+def test_anonymous_job_submit_returns_401(client):
+    """Job submission consumes metered compute — anonymous POST /jobs is rejected."""
+    response = client.post(
+        "/jobs",
+        json={"input_url": "https://youtu.be/test"},
+        content_type="application/json",
+    )
+    assert response.status_code == 401
+    assert response.json["error"] == "unauthorized"
+
+
+def test_anonymous_job_result_returns_401(client):
+    response = client.get("/jobs/any-id/result")
+    assert response.status_code == 401
+    assert response.json["error"] == "unauthorized"
+
+
+def test_client_supplied_user_id_is_overwritten(authed_client):
+    """user_id is set server-side from the session; spoofed values are ignored."""
+    client, user = authed_client
+    response = client.post(
+        "/jobs",
+        json={"input_url": "https://youtu.be/test", "user_id": "attacker-chosen"},
+        content_type="application/json",
+    )
+    assert response.status_code == 201
+    assert response.json["request_payload"]["user_id"] == user.user_id
+
+
+def test_job_attributed_to_session_user(authed_client):
+    client, user = authed_client
+    response = client.post(
+        "/jobs",
+        json={"input_url": "https://youtu.be/test"},
+        content_type="application/json",
+    )
+    assert response.status_code == 201
+    assert response.json["request_payload"]["user_id"] == user.user_id
+
+
+def test_job_result_denied_for_non_owner(authed_client):
+    """A non-owner receives 404 — job ids must not be confirmable by probing."""
+    client, user = authed_client
+    job_id = client.post(
+        "/jobs",
+        json={"input_url": "https://youtu.be/test"},
+        content_type="application/json",
+    ).json["job_id"]
+
+    other = UserStore().create(
+        google_sub="g-other", email="other@example.com", display_name="Other"
+    )
+    with client.session_transaction() as sess:
+        sess["user_id"] = other.user_id
+
+    response = client.get(f"/jobs/{job_id}/result")
+    assert response.status_code == 404
+    assert response.json["error"] == "not_found"
+
+
+# ---------------------------------------------------------------------------
+# Usage counting on successful submission (#32)
+# ---------------------------------------------------------------------------
+
+
+def test_successful_submission_increments_usage(authed_client):
+    client, user = authed_client
+    period_key = (
+        __import__("datetime")
+        .datetime.now(__import__("datetime").timezone.utc)
+        .strftime("%Y-%m")
+    )
+    assert UsageStore().get_monthly_count(user.user_id, period_key) == 0
+
+    response = client.post(
+        "/jobs",
+        json={"input_url": "https://youtu.be/test"},
+        content_type="application/json",
+    )
+    assert response.status_code == 201
+    assert UsageStore().get_monthly_count(user.user_id, period_key) == 1
+
+
+def test_failed_submission_does_not_increment_usage(authed_client):
+    client, user = authed_client
+    period_key = (
+        __import__("datetime")
+        .datetime.now(__import__("datetime").timezone.utc)
+        .strftime("%Y-%m")
+    )
+
+    response = client.post("/jobs", json={"params": {}})  # missing input_url
+    assert response.status_code in (400, 422)
+    assert UsageStore().get_monthly_count(user.user_id, period_key) == 0
+
+
+def test_plan_limit_enforced_end_to_end_without_manual_increments(authed_client):
+    """Free plan (limit 2): two real submissions succeed, the third is blocked.
+
+    Regression for #32 — enforcement must trip from real submissions alone;
+    previously the counter was only ever incremented by test code.
+    """
+    client, user = authed_client
+    payload = {"input_url": "https://youtu.be/test", "params": {}}
+
+    assert client.post("/jobs", json=payload).status_code == 201
+    assert client.post("/jobs", json=payload).status_code == 201
+
+    response = client.post("/jobs", json=payload)
+    assert response.status_code == 402
+    assert response.json["error"] == "plan_limit_exceeded"
 
 
 @pytest.fixture
@@ -249,17 +371,19 @@ def test_usage_store_independent_periods(usage_table):
         ("business", 30),
     ],
 )
-def test_plan_limit_enforcement_blocks_at_cap(
-    authed_client, plan_code, stream_limit
-):
+def test_plan_limit_enforcement_blocks_at_cap(authed_client, plan_code, stream_limit):
     """Enforcement A: POST /jobs returns 402 when monthly limit is reached."""
     client, user = authed_client
-    period_key = __import__("datetime").datetime.now(
-        __import__("datetime").timezone.utc
-    ).strftime("%Y-%m")
+    period_key = (
+        __import__("datetime")
+        .datetime.now(__import__("datetime").timezone.utc)
+        .strftime("%Y-%m")
+    )
 
     # Update user to the target plan.
-    boto3.resource("dynamodb", region_name="us-west-2").Table("sanji-users").update_item(
+    boto3.resource("dynamodb", region_name="us-west-2").Table(
+        "sanji-users"
+    ).update_item(
         Key={"user_id": user.user_id},
         UpdateExpression="SET current_plan_code = :p",
         ExpressionAttributeValues={":p": plan_code},
@@ -286,16 +410,6 @@ def test_plan_limit_allows_under_cap(authed_client):
     response = client.post(
         "/jobs",
         json={"input_url": "https://youtu.be/test", "params": {}},
-        content_type="application/json",
-    )
-    assert response.status_code == 201
-
-
-def test_unauthenticated_job_submit_passes_enforcement(client):
-    """No session → enforcement hook is a no-op; sandjig processes normally."""
-    response = client.post(
-        "/jobs",
-        json={"input_url": "https://youtu.be/test"},
         content_type="application/json",
     )
     assert response.status_code == 201

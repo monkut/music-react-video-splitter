@@ -35,10 +35,14 @@ from sanji.service.billing import (
 )
 from sanji.service.jobs import SanjiJobRequest, SanjiJobResult
 from sanji.service.logging_config import configure_logging
-from sanji.service.plans import PLANS, get_plan
+from sanji.service.plans import DEFAULT_PLAN_CODE, PLANS, get_plan
 from sanji.service.usage import UsageStore
 from sanji.service.users import UserStore
-from sanji.settings import PRESIGN_EXPIRY_SECONDS, RESULTS_BUCKET_ENV, validate_stripe_env_vars
+from sanji.settings import (
+    PRESIGN_EXPIRY_SECONDS,
+    RESULTS_BUCKET_ENV,
+    validate_stripe_env_vars,
+)
 
 # PrintLoggerFactory has no stdlib logger name; bind the required `logger` field explicitly.
 logger = structlog.get_logger().bind(logger=__name__)
@@ -83,31 +87,43 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> Flask:
 
     @app.before_request
     def handle_plan_enforcement():
-        """Enforce plan limits before sandjig enqueues a job.
+        """Authenticate and enforce plan limits before sandjig enqueues a job.
+
+        Authentication (#30): anonymous ``POST /jobs`` is rejected with 401 —
+        job submission consumes metered compute and must be attributable.
 
         Enforcement A: Returns HTTP 402 when the authenticated user's monthly
         stream count has reached their plan cap.
 
+        Attribution (#30): overwrites any client-supplied ``user_id`` with the
+        session user so stored jobs are trustworthy for ownership checks.
+
         Duration injection: Adds max_duration_seconds to the job params so the
         async worker can enforce the per-video duration cap (enforcement B) without
         needing to look up plan data from DynamoDB itself.
-
-        Unauthenticated requests pass through unchanged.
         """
         if request.method != "POST" or request.path != "/jobs":
             return None
 
         user_id: str | None = session.get(SESSION_USER_ID)
         if not user_id:
-            return None
+            return jsonify(
+                error="unauthorized", message="Authentication required."
+            ), 401
 
         user = UserStore().get(user_id)
         if user is None:
-            return None
+            session.pop(SESSION_USER_ID, None)
+            return jsonify(
+                error="unauthorized", message="Authentication required."
+            ), 401
 
         plan = get_plan(user.current_plan_code)
         if plan is None:
-            return None
+            logger.warning(
+                "unknown_plan_code", user_id=user_id, plan=user.current_plan_code
+            )
+            plan = get_plan(DEFAULT_PLAN_CODE)
 
         period_key = datetime.now(UTC).strftime("%Y-%m")
         current_count = UsageStore().get_monthly_count(user_id, period_key)
@@ -132,14 +148,42 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> Flask:
                 402,
             )
 
-        # Inject max_duration_seconds into params so the worker enforces duration (B).
+        # Inject max_duration_seconds into params so the worker enforces duration (B),
+        # and overwrite user_id from the session (client-supplied values are ignored).
         # Overwrite the request's cached JSON so sandjig reads the augmented body.
         body = dict(request.get_json(silent=True, force=True) or {})
         params = dict(body.get("params") or {})
         params.setdefault("max_duration_seconds", plan.max_video_duration_seconds)
         body["params"] = params
+        body["user_id"] = user_id
         request._cached_json = (body, body)  # type: ignore[assignment]
         return None
+
+    @app.after_request
+    def handle_usage_increment(response: Response) -> Response:
+        """Count a successful job submission against the user's monthly cap (#32).
+
+        Runs only for ``POST /jobs`` 201 responses; failed submissions (401/402/
+        422/5xx) do not consume quota. The increment uses the atomic DynamoDB
+        ADD in UsageStore, so concurrent submissions cannot double-count.
+        """
+        if (
+            request.method == "POST"
+            and request.path == "/jobs"
+            and response.status_code == 201
+        ):
+            user_id: str | None = session.get(SESSION_USER_ID)
+            if user_id:
+                try:
+                    count = UsageStore().increment_current_count(user_id)
+                    logger.info("usage_incremented", user_id=user_id, count=count)
+                except Exception as exc:
+                    # the job is already enqueued — do not fail the response;
+                    # an uncounted job under-bills, a failed response double-runs
+                    logger.error(
+                        "usage_increment_failed", user_id=user_id, error=str(exc)
+                    )
+        return response
 
     @app.get("/health")
     def health() -> tuple[dict, int]:
@@ -155,11 +199,15 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> Flask:
         return current_user.model_dump(), 200
 
     @app.get("/jobs/<job_id>/result")
-    def job_result(job_id: str) -> tuple[dict, int]:
+    @login_required
+    def job_result(job_id: str, current_user: CurrentUser) -> tuple[dict, int]:
         """Job status plus presigned download URLs for its result artifacts.
 
         sandjig owns ``GET /jobs/<id>`` (status + raw keys); this companion route
         turns the stored S3 keys into time-limited download URLs (#8).
+
+        Requires login; only the job owner may fetch result URLs (#30) — a
+        non-owner receives 404 so job ids are not confirmable by probing.
         """
         try:
             job = cast(
@@ -167,6 +215,15 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> Flask:
                 ProcessingJobModel.get_processingjobmodel_item(job_id, as_dict=True),
             )
         except ItemDoesNotExistError:
+            return {"error": "not_found"}, 404
+
+        owner_id = (job.get("request_payload") or {}).get("user_id")
+        if owner_id != current_user.user_id:
+            logger.info(
+                "job_result_ownership_denied",
+                job_id=job_id,
+                user_id=current_user.user_id,
+            )
             return {"error": "not_found"}, 404
 
         payload = job.get("response_payload") or {}
