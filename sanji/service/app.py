@@ -41,6 +41,7 @@ from sanji.service.users import UserStore
 from sanji.settings import (
     PRESIGN_EXPIRY_SECONDS,
     RESULTS_BUCKET_ENV,
+    validate_secret_key_env_var,
     validate_stripe_env_vars,
 )
 
@@ -68,6 +69,9 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> Flask:
         json_output=os.getenv("SANJI_ENVIRONMENT", "development") != "development"
     )
     validate_stripe_env_vars()
+    # validate before building the sandjig app so a missing key fails fast,
+    # before any AWS access
+    secret_key = validate_secret_key_env_var()
 
     config: dict[str, Any] = {
         "API_TITLE": "sanji API",
@@ -79,7 +83,7 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> Flask:
     app = create_sandjig_app(SanjiJobRequest, SanjiJobResult, config=config)
 
     # Signed session cookie configuration.
-    app.secret_key = os.getenv("SECRET_KEY", "dev-secret-change-in-prod")
+    app.secret_key = secret_key
     is_production = os.getenv("SANJI_ENVIRONMENT", "development") != "development"
     app.config["SESSION_COOKIE_SECURE"] = is_production
     app.config["SESSION_COOKIE_HTTPONLY"] = True

@@ -12,6 +12,9 @@ os.environ.setdefault("AWS_ACCESS_KEY_ID", "testing")
 os.environ.setdefault("AWS_SECRET_ACCESS_KEY", "testing")
 os.environ.setdefault("AWS_DEFAULT_REGION", "us-west-2")
 
+# Session signing — dummy value so create_app() passes fail-fast validation in tests
+os.environ.setdefault("SECRET_KEY", "test-secret-key")
+
 # Stripe — dummy values so create_app() passes fail-fast validation in tests
 os.environ.setdefault("STRIPE_SECRET_KEY", "sk_test_dummy")
 os.environ.setdefault("STRIPE_WEBHOOK_SECRET", "whsec_dummy")

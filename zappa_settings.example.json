@@ -12,6 +12,7 @@
         "environment_variables": {
             "LOG_LEVEL": "INFO",
             "SANJI_ENVIRONMENT": "dev",
+            "SECRET_KEY": "<GENERATE_LONG_RANDOM_SECRET>",
             "AWS_ACCOUNT_ID": "<AWS_ACCOUNT_ID>",
             "DYNAMODB_PROCESSINGJOB_REQUESTS_TABLENAME": "sanji-jobs-requests-dev",
             "DYNAMODB_PROCESSINGJOB_SETTINGS_TABLENAME": "sanji-jobs-settings-dev",
