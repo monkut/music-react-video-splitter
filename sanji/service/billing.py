@@ -16,7 +16,7 @@ from flask import request
 from pydantic import BaseModel
 
 from sanji.service.auth import CurrentUser
-from sanji.service.plans import PLANS
+from sanji.service.plans import PLANS, resolve_stripe_price_id
 from sanji.service.users import UserStore
 
 logger = structlog.get_logger().bind(logger=__name__)
@@ -99,7 +99,10 @@ class ProcessedEventStore:
 
 
 def _plan_code_for_price_id(price_id: str) -> str | None:
-    return next((plan.code for plan in PLANS if plan.stripe_price_id == price_id), None)
+    return next(
+        (plan.code for plan in PLANS if resolve_stripe_price_id(plan) == price_id),
+        None,
+    )
 
 
 class BillingService:
@@ -116,6 +119,10 @@ class BillingService:
         self._processed_events = processed_event_store or ProcessedEventStore()
 
     def create_checkout_session(self, user: CurrentUser, price_id: str) -> str:
+        """Create a fresh Checkout Session (no idempotency key: a static key made
+        Stripe return the same — possibly expired or completed — session for 24h
+        when a user retried after abandoning checkout; creation is safe to repeat).
+        """
         if _plan_code_for_price_id(price_id) is None:
             raise InvalidPriceIdError(f"price_id not in PLANS allowlist: {price_id}")
 
@@ -131,7 +138,6 @@ class BillingService:
             subscription_data={"metadata": {"user_id": user.user_id}},
             success_url=f"{base_url}/billing/success?session_id={{CHECKOUT_SESSION_ID}}",
             cancel_url=f"{base_url}/billing/cancel",
-            idempotency_key=f"checkout-{user.user_id}-{price_id}",
         )
         logger.info("checkout_session_created", user_id=user.user_id, price_id=price_id)
         return session.url
