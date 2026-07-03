@@ -1121,7 +1121,7 @@ wheels = [
 [[package]]
 name = "sandjig"
 version = "0.1.0"
-source = { git = "https://github.com/monkut/sandjig.git?branch=main#6d16ab12ab2cb60e4b3289092d5051cd2bdd7732" }
+source = { git = "https://github.com/monkut/sandjig.git?rev=f2adae3688587811cd8047873b92599f4a613011#f2adae3688587811cd8047873b92599f4a613011" }
 dependencies = [
     { name = "boto3" },
     { name = "flask" },
@@ -1188,8 +1188,8 @@ requires-dist = [
     { name = "numpy", marker = "extra == 'worker'" },
     { name = "pydantic", marker = "extra == 'api'", specifier = ">=2" },
     { name = "pydantic", marker = "extra == 'worker'", specifier = ">=2" },
-    { name = "sandjig", marker = "extra == 'api'", git = "https://github.com/monkut/sandjig.git?branch=main" },
-    { name = "sandjig", marker = "extra == 'worker'", git = "https://github.com/monkut/sandjig.git?branch=main" },
+    { name = "sandjig", marker = "extra == 'api'", git = "https://github.com/monkut/sandjig.git?rev=f2adae3688587811cd8047873b92599f4a613011" },
+    { name = "sandjig", marker = "extra == 'worker'", git = "https://github.com/monkut/sandjig.git?rev=f2adae3688587811cd8047873b92599f4a613011" },
     { name = "stripe", marker = "extra == 'api'", specifier = ">=15.3.0" },
     { name = "structlog", marker = "extra == 'api'", specifier = ">=24" },
     { name = "structlog", marker = "extra == 'worker'", specifier = ">=24" },
