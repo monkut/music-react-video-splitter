@@ -171,6 +171,8 @@ Then edit the copy and replace the placeholder values for your AWS environment:
 | `environment_variables.STRIPE_SECRET_KEY` | Stripe secret key (from Stripe Dashboard → Developers → API keys) |
 | `environment_variables.STRIPE_WEBHOOK_SECRET` | Stripe webhook signing secret (from Dashboard → Webhooks → endpoint secret) |
 | `environment_variables.STRIPE_PUBLISHABLE_KEY` | Stripe publishable key (safe for client-side use) |
+| `environment_variables.SANJI_STRIPE_PRICE_PRO` | Stripe Price ID for the Pro plan (Dashboard → Products) — checkout 422s without it |
+| `environment_variables.SANJI_STRIPE_PRICE_BUSINESS` | Stripe Price ID for the Business plan |
 | `log_level` | Zappa handler log level — `WARNING` keeps the full API Gateway event payload out of the logs (see #16) |
 
 ### Deploy

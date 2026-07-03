@@ -36,8 +36,8 @@ def aws_credentials(monkeypatch):
 
 @pytest.fixture
 def pro_price_id(monkeypatch):
-    pro_plan = next(plan for plan in PLANS if plan.code == "pro")
-    monkeypatch.setattr(pro_plan, "stripe_price_id", PRO_PRICE_ID)
+    """Wire the pro plan's price id the way production does — via env (#37)."""
+    monkeypatch.setenv("SANJI_STRIPE_PRICE_PRO", PRO_PRICE_ID)
     return PRO_PRICE_ID
 
 
@@ -156,9 +156,8 @@ def test_checkout_creates_stripe_session(app_client, pro_price_id):
     session_kwargs = session_create.call_args.kwargs
     assert session_kwargs["mode"] == "subscription"
     assert session_kwargs["client_reference_id"] == user.user_id
-    assert (
-        session_kwargs["idempotency_key"] == f"checkout-{user.user_id}-{pro_price_id}"
-    )
+    # a static idempotency key returned stale sessions on retry (#37)
+    assert "idempotency_key" not in session_kwargs
 
     stored = UserStore().get(user.user_id)
     assert stored is not None
@@ -303,3 +302,33 @@ def test_checkout_without_auth_returns_401(app_client):
     response = app_client.post("/billing/checkout", json={"price_id": PRO_PRICE_ID})
     assert response.status_code == 401
     assert response.json["error"] == "unauthorized"
+
+
+def test_resolve_price_ids_from_env(monkeypatch):
+    """Price IDs are deploy config: resolved from env at lookup time (#37)."""
+    from sanji.service.billing import _plan_code_for_price_id
+    from sanji.service.plans import resolve_stripe_price_id
+
+    monkeypatch.setenv("SANJI_STRIPE_PRICE_PRO", "price_env_pro")
+    monkeypatch.setenv("SANJI_STRIPE_PRICE_BUSINESS", "price_env_biz")
+
+    pro = next(plan for plan in PLANS if plan.code == "pro")
+    business = next(plan for plan in PLANS if plan.code == "business")
+    free = next(plan for plan in PLANS if plan.code == "free")
+
+    assert resolve_stripe_price_id(pro) == "price_env_pro"
+    assert resolve_stripe_price_id(business) == "price_env_biz"
+    assert resolve_stripe_price_id(free) is None  # free tier has no price
+
+    assert _plan_code_for_price_id("price_env_pro") == "pro"
+    assert _plan_code_for_price_id("price_env_biz") == "business"
+    assert _plan_code_for_price_id("price_unknown") is None
+
+
+def test_plan_code_unresolvable_without_env(monkeypatch):
+    """Without env wiring every price id is unknown — the pre-#37 dead state."""
+    from sanji.service.billing import _plan_code_for_price_id
+
+    monkeypatch.delenv("SANJI_STRIPE_PRICE_PRO", raising=False)
+    monkeypatch.delenv("SANJI_STRIPE_PRICE_BUSINESS", raising=False)
+    assert _plan_code_for_price_id("price_anything") is None

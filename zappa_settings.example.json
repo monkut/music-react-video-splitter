@@ -21,6 +21,8 @@
             "STRIPE_SECRET_KEY": "sk_test_<YOUR_STRIPE_SECRET_KEY>",
             "STRIPE_WEBHOOK_SECRET": "whsec_<YOUR_STRIPE_WEBHOOK_SECRET>",
             "STRIPE_PUBLISHABLE_KEY": "pk_test_<YOUR_STRIPE_PUBLISHABLE_KEY>",
+            "SANJI_STRIPE_PRICE_PRO": "price_<YOUR_PRO_PRICE_ID>",
+            "SANJI_STRIPE_PRICE_BUSINESS": "price_<YOUR_BUSINESS_PRICE_ID>",
             "SANJI_SUBSCRIPTIONS_TABLE": "sanji-subscriptions-dev",
             "SANJI_WEBHOOK_EVENTS_TABLE": "sanji-webhook-events-dev",
             "SANJI_RESULTS_BUCKET": "<SANJI_RESULTS_BUCKET>"
