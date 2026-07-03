@@ -85,15 +85,20 @@ def split_video(
 
         output_path = output_dir / filename
 
+        # Input-side seek (-ss before -i): ffmpeg jumps to the nearest keyframe
+        # and decodes forward only from there — output-side seeking decoded the
+        # whole file from t=0 for every segment (O(N·T), #39). With re-encoding
+        # the seek is frame-accurate. -t (duration) replaces -to, whose meaning
+        # changes with input seeking (timestamps reset to the seek point).
         cmd = [
             "ffmpeg",
             "-y",
-            "-i",
-            str(video_path),
             "-ss",
             str(start),
-            "-to",
-            str(end),
+            "-i",
+            str(video_path),
+            "-t",
+            str(end - start),
             "-c:v",
             "libx264",
             "-crf",
