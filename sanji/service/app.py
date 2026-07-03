@@ -74,6 +74,15 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> Flask:
     # before any AWS access
     secret_key = validate_secret_key_env_var()
 
+    # Constructed once per app (i.e. once per Lambda cold start) and closed over
+    # by the hooks and handlers below: each boto3 client/resource construction
+    # rebuilds the session and credential chain, which is measurable per-request
+    # latency (#40).
+    user_store = UserStore()
+    usage_store = UsageStore()
+    billing_service = BillingService(user_store=user_store)
+    s3_client = boto3.client("s3")
+
     def authorize_job_request(payload: dict) -> tuple[Any, int] | None:
         """sandjig JOBREQUEST_AUTHORIZATION_FUNCTION for ``POST /jobs`` (#30, #43).
 
@@ -92,7 +101,7 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> Flask:
                 error="unauthorized", message="Authentication required."
             ), 401
 
-        user = UserStore().get(user_id)
+        user = user_store.get(user_id)
         if user is None:
             session.pop(SESSION_USER_ID, None)
             return jsonify(
@@ -107,7 +116,7 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> Flask:
             plan = get_plan(DEFAULT_PLAN_CODE)
 
         period_key = datetime.now(UTC).strftime("%Y-%m")
-        current_count = UsageStore().get_monthly_count(user_id, period_key)
+        current_count = usage_store.get_monthly_count(user_id, period_key)
         if current_count >= plan.monthly_stream_limit:
             logger.info(
                 "plan_limit_reached",
@@ -185,7 +194,7 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> Flask:
             user_id: str | None = session.get(SESSION_USER_ID)
             if user_id:
                 try:
-                    count = UsageStore().increment_current_count(user_id)
+                    count = usage_store.increment_current_count(user_id)
                     logger.info("usage_incremented", user_id=user_id, count=count)
                 except Exception as exc:
                     # the job is already enqueued — do not fail the response;
@@ -241,10 +250,8 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> Flask:
         if not bucket:
             logger.warning("results_bucket_unset", env=RESULTS_BUCKET_ENV)
 
-        s3 = boto3.client("s3")
-
         def presign(key: str) -> str:
-            return s3.generate_presigned_url(
+            return s3_client.generate_presigned_url(
                 "get_object",
                 Params={"Bucket": bucket, "Key": key},
                 ExpiresIn=PRESIGN_EXPIRY_SECONDS,
@@ -274,11 +281,11 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> Flask:
     @app.post("/billing/checkout")
     @login_required
     def billing_checkout(current_user: CurrentUser) -> tuple[dict, int]:
-        return handle_checkout(current_user, BillingService())
+        return handle_checkout(current_user, billing_service)
 
     @app.post("/webhooks/stripe")
     def stripe_webhook() -> tuple[dict, int]:
-        return handle_stripe_webhook(BillingService())
+        return handle_stripe_webhook(billing_service)
 
     @app.get("/auth/logout")
     def logout() -> tuple[str, int]:

@@ -52,6 +52,9 @@ class ProcessedEventRecord(BaseModel):
     processed_at: str
 
 
+STRIPE_CUSTOMER_INDEX = "stripe_customer_id-index"
+
+
 class SubscriptionStore:
     """Owns SubscriptionRecord persistence in DynamoDB (keyed by user_id)."""
 
@@ -70,9 +73,16 @@ class SubscriptionStore:
         return SubscriptionRecord.model_validate(item) if item else None
 
     def get_by_customer_id(self, stripe_customer_id: str) -> SubscriptionRecord | None:
-        response = self._table.scan(
-            FilterExpression="stripe_customer_id = :cid",
+        """Keyed GSI query — this runs on every subscription/invoice webhook.
+
+        The previous Scan+FilterExpression cost grew with total table size and
+        silently missed matches beyond the 1MB scan page (#40).
+        """
+        response = self._table.query(
+            IndexName=STRIPE_CUSTOMER_INDEX,
+            KeyConditionExpression="stripe_customer_id = :cid",
             ExpressionAttributeValues={":cid": stripe_customer_id},
+            Limit=1,
         )
         items = response.get("Items", [])
         return SubscriptionRecord.model_validate(items[0]) if items else None
