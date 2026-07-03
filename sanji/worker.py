@@ -59,13 +59,27 @@ class ResultUploader:
         )
         return key
 
+    def _upload_file(self, key: str, path: Path, content_type: str) -> str:
+        """Stream a file from disk (managed multipart) — segments can be multi-GB,
+        so they must never be read wholly into the container's memory (#38)."""
+        self._s3.upload_file(
+            str(path), self._bucket, key, ExtraArgs={"ContentType": content_type}
+        )
+        logger.info(
+            "result_object_uploaded",
+            bucket=self._bucket,
+            key=key,
+            bytes=path.stat().st_size,
+        )
+        return key
+
     def upload_segment(self, path: Path) -> str:
-        return self._put(
-            f"{self._prefix}/segments/{path.name}", path.read_bytes(), "video/mp4"
+        return self._upload_file(
+            f"{self._prefix}/segments/{path.name}", path, "video/mp4"
         )
 
     def upload_manifest(self, path: Path) -> str:
-        return self._put(f"{self._prefix}/manifest.csv", path.read_bytes(), "text/csv")
+        return self._upload_file(f"{self._prefix}/manifest.csv", path, "text/csv")
 
     def write_marker(self, result: SanjiJobResult) -> str:
         """Write ``result.json`` last — its arrival is the completion signal."""

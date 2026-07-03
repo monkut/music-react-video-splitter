@@ -121,6 +121,28 @@ def test_process_job_uploads_artifacts_and_marker(s3, tmp_path, monkeypatch):
     assert result.result_manifest_key == f"{prefix}/manifest.csv"
 
 
+def test_uploads_stream_from_disk_with_content_type(s3, tmp_path, monkeypatch):
+    """Segments upload via upload_file (streaming multipart), preserving metadata.
+
+    Regression for #38: read_bytes() + put_object loaded multi-GB segments
+    wholly into worker memory.
+    """
+    monkeypatch.setattr(
+        "sanji.worker.run_pipeline", lambda *a, **k: _fake_pipeline_result(tmp_path)
+    )
+    request = SanjiJobRequest(input_url="https://youtu.be/x", params={})
+
+    process_job(JOB_ID, request, BUCKET, s3_client=s3)
+
+    prefix = f"{RESULTS_ROOT}/{JOB_ID}"
+    segment = s3.head_object(Bucket=BUCKET, Key=f"{prefix}/segments/segment_00.mp4")
+    assert segment["ContentType"] == "video/mp4"
+    manifest = s3.head_object(Bucket=BUCKET, Key=f"{prefix}/manifest.csv")
+    assert manifest["ContentType"] == "text/csv"
+    marker = s3.head_object(Bucket=BUCKET, Key=f"{prefix}/result.json")
+    assert marker["ContentType"] == "application/json"
+
+
 def test_result_marker_references_uploaded_segments(s3, tmp_path, monkeypatch):
     """result.json carries the segment keys — proof it is written after the uploads."""
     monkeypatch.setattr(
