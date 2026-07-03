@@ -72,6 +72,21 @@ _REQUIRED_STRIPE_VARS = (
     STRIPE_PUBLISHABLE_KEY_ENV,
 )
 
+# Flask session-signing key env var name (value loaded at runtime in create_app)
+SECRET_KEY_ENV = "SECRET_KEY"
+
+
+def validate_secret_key_env_var() -> str:
+    """Return the session-signing key, raising ValueError at app startup when unset.
+
+    A hardcoded fallback would ship a publicly known signing key, letting anyone
+    forge session cookies (issue #31) — fail fast instead.
+    """
+    secret_key = os.getenv(SECRET_KEY_ENV)
+    if not secret_key:
+        raise ValueError(f"Missing required environment variable: {SECRET_KEY_ENV}")
+    return secret_key
+
 
 def validate_stripe_env_vars() -> None:
     """Raise ValueError at app startup if any Stripe env var is absent."""
