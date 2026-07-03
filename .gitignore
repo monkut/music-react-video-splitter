@@ -16,6 +16,11 @@ samples/
 .python-version
 data/bench
 
+# Local environment — created from .env.example; never committed.
+.env
+.env.*
+!.env.example
+
 # Deployment — environment-specific Zappa config (see README "Deployment").
 # Created locally from zappa_settings.example.json; never committed.
 zappa_settings.json
