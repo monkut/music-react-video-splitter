@@ -15,6 +15,7 @@ from moto import mock_aws
 from sanji.service.billing import (
     DEFAULT_SUBSCRIPTIONS_TABLE,
     DEFAULT_WEBHOOK_EVENTS_TABLE,
+    STRIPE_CUSTOMER_INDEX,
     ProcessedEventStore,
     SubscriptionStore,
 )
@@ -61,8 +62,20 @@ def _create_tables():
     )
     dynamodb.create_table(
         TableName=DEFAULT_SUBSCRIPTIONS_TABLE,
-        AttributeDefinitions=[{"AttributeName": "user_id", "AttributeType": "S"}],
+        AttributeDefinitions=[
+            {"AttributeName": "user_id", "AttributeType": "S"},
+            {"AttributeName": "stripe_customer_id", "AttributeType": "S"},
+        ],
         KeySchema=[{"AttributeName": "user_id", "KeyType": "HASH"}],
+        GlobalSecondaryIndexes=[
+            {
+                "IndexName": STRIPE_CUSTOMER_INDEX,
+                "KeySchema": [
+                    {"AttributeName": "stripe_customer_id", "KeyType": "HASH"}
+                ],
+                "Projection": {"ProjectionType": "ALL"},
+            }
+        ],
         BillingMode="PAY_PER_REQUEST",
     )
     dynamodb.create_table(
@@ -332,3 +345,34 @@ def test_plan_code_unresolvable_without_env(monkeypatch):
     monkeypatch.delenv("SANJI_STRIPE_PRICE_PRO", raising=False)
     monkeypatch.delenv("SANJI_STRIPE_PRICE_BUSINESS", raising=False)
     assert _plan_code_for_price_id("price_anything") is None
+
+
+def test_get_by_customer_id_uses_gsi(app_client):
+    """Customer lookup queries the stripe_customer_id GSI — no table Scan (#40)."""
+    from datetime import UTC, datetime
+    from unittest.mock import patch
+
+    from sanji.service.billing import SubscriptionRecord
+
+    store = SubscriptionStore()
+    store.put(
+        SubscriptionRecord(
+            user_id="u-gsi",
+            stripe_subscription_id="sub_gsi_1",
+            stripe_customer_id="cus_gsi_1",
+            plan_code="pro",
+            status="active",
+            current_period_end=datetime.now(UTC).isoformat(),
+            updated_at=datetime.now(UTC).isoformat(),
+        )
+    )
+
+    found = store.get_by_customer_id("cus_gsi_1")
+    assert found is not None
+    assert found.user_id == "u-gsi"
+    assert store.get_by_customer_id("cus_missing") is None
+
+    # scan must never run for customer lookup
+    with patch.object(store._table, "scan") as scan_mock:
+        store.get_by_customer_id("cus_gsi_1")
+    scan_mock.assert_not_called()
