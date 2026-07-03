@@ -34,45 +34,45 @@ uv sync --extra ml
 ### Split a YouTube video
 
 ```bash
-uv run python splitter.py "https://www.youtube.com/watch?v=VIDEO_ID"
+uv run sanji "https://www.youtube.com/watch?v=VIDEO_ID"
 ```
 
 ### Split a local video file
 
 ```bash
-uv run python splitter.py ./my-reaction-stream.mp4
+uv run sanji ./my-reaction-stream.mp4
 ```
 
 ### Common options
 
 ```bash
 # Custom output directory
-uv run python splitter.py VIDEO_URL -o ./clips/
+uv run sanji VIDEO_URL -o ./clips/
 
 # Analyze without splitting (see detected boundaries)
-uv run python splitter.py VIDEO_URL --dry-run
+uv run sanji VIDEO_URL --dry-run
 
 # Validate detection against description timestamps
-uv run python splitter.py VIDEO_URL --validate
+uv run sanji VIDEO_URL --validate
 
 # Skip transcription refinement (faster, less precise)
-uv run python splitter.py VIDEO_URL --no-transcribe
+uv run sanji VIDEO_URL --no-transcribe
 
 # Use a larger Whisper model for better transcription accuracy
-uv run python splitter.py VIDEO_URL --whisper-model small
+uv run sanji VIDEO_URL --whisper-model small
 ```
 
 ### Tuning parameters
 
 ```bash
 # Adjust music detection sensitivity
-uv run python splitter.py VIDEO_URL --window 60 --threshold 0.50
+uv run sanji VIDEO_URL --window 60 --threshold 0.50
 
 # Set minimum song region duration (seconds)
-uv run python splitter.py VIDEO_URL --min-segment 30
+uv run sanji VIDEO_URL --min-segment 30
 
 # Merge short regions with neighbors (handles mid-song pauses)
-uv run python splitter.py VIDEO_URL --min-song 180
+uv run sanji VIDEO_URL --min-song 180
 ```
 
 ### All options
