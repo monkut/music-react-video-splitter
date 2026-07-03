@@ -42,7 +42,8 @@ class SubscriptionRecord(BaseModel):
     stripe_customer_id: str
     plan_code: str
     status: str
-    current_period_end: str
+    # ISO datetime; None when Stripe omits the period end (informational field)
+    current_period_end: str | None = None
     updated_at: str
 
 
@@ -215,15 +216,25 @@ class BillingService:
         items = (subscription.get("items") or {}).get("data") or []
         price_id = items[0]["price"]["id"] if items else ""
         status = subscription["status"]
+        # Stripe API 2025-03-31.basil moved current_period_end from the
+        # subscription object to its items; fall back to the legacy top-level
+        # field for older-API payloads (#36).
+        period_end_ts = (
+            items[0].get("current_period_end") if items else None
+        ) or subscription.get("current_period_end")
+        if period_end_ts is None:
+            logger.warning(
+                "subscription_period_end_missing", subscription_id=subscription_id
+            )
         record = SubscriptionRecord(
             user_id=user_id,
             stripe_subscription_id=subscription["id"],
             stripe_customer_id=customer_id,
             plan_code=_plan_code_for_price_id(price_id) or "unknown",
             status=_STRIPE_STATUS_MAP.get(status, status),
-            current_period_end=datetime.fromtimestamp(
-                subscription["current_period_end"], tz=UTC
-            ).isoformat(),
+            current_period_end=datetime.fromtimestamp(period_end_ts, tz=UTC).isoformat()
+            if period_end_ts
+            else None,
             updated_at=datetime.now(UTC).isoformat(),
         )
         self._subscriptions.put(record)

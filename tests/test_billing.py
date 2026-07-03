@@ -4,6 +4,7 @@ AWS (DynamoDB, SQS) is mocked with moto; the Stripe SDK is patched so tests
 run offline without real credentials.
 """
 
+from datetime import UTC, datetime
 from unittest.mock import MagicMock, patch
 
 import boto3
@@ -102,6 +103,20 @@ def _seed_user(client):
 
 
 def _subscription_payload(user_id, *, status="active", price_id=PRO_PRICE_ID):
+    """Post-basil (2025-03-31) Stripe shape: current_period_end lives on items."""
+    return {
+        "id": "sub_test_1",
+        "customer": "cus_test_1",
+        "status": status,
+        "metadata": {"user_id": user_id},
+        "items": {
+            "data": [{"price": {"id": price_id}, "current_period_end": 1782000000}]
+        },
+    }
+
+
+def _legacy_subscription_payload(user_id, *, status="active", price_id=PRO_PRICE_ID):
+    """Pre-basil shape: current_period_end at the subscription top level."""
     return {
         "id": "sub_test_1",
         "customer": "cus_test_1",
@@ -173,6 +188,58 @@ def test_webhook_valid_signature_updates_subscription(app_client, pro_price_id):
     record = SubscriptionStore().get(user.user_id)
     assert record is not None
     assert record.stripe_subscription_id == "sub_test_1"
+
+
+def test_webhook_syncs_period_end_from_basil_items_shape(app_client, pro_price_id):
+    """Post-basil payloads carry current_period_end on items.data[] (#36)."""
+    user = _seed_user(app_client)
+    with (
+        patch(
+            "stripe.Webhook.construct_event",
+            return_value=_subscription_updated_event(),
+        ),
+        patch(
+            "stripe.Subscription.retrieve",
+            return_value=_subscription_payload(user.user_id),
+        ),
+    ):
+        response = app_client.post(
+            "/webhooks/stripe",
+            data=b"{}",
+            headers={"Stripe-Signature": "t=1,v1=testsig"},
+        )
+
+    assert response.status_code == 200, response.data
+    record = SubscriptionStore().get(user.user_id)
+    assert record is not None
+    expected = datetime.fromtimestamp(1782000000, tz=UTC).isoformat()
+    assert record.current_period_end == expected
+
+
+def test_webhook_syncs_period_end_from_legacy_top_level_field(app_client, pro_price_id):
+    """Pre-basil payloads still sync via the top-level fallback (#36)."""
+    user = _seed_user(app_client)
+    with (
+        patch(
+            "stripe.Webhook.construct_event",
+            return_value=_subscription_updated_event(),
+        ),
+        patch(
+            "stripe.Subscription.retrieve",
+            return_value=_legacy_subscription_payload(user.user_id),
+        ),
+    ):
+        response = app_client.post(
+            "/webhooks/stripe",
+            data=b"{}",
+            headers={"Stripe-Signature": "t=1,v1=testsig"},
+        )
+
+    assert response.status_code == 200, response.data
+    record = SubscriptionStore().get(user.user_id)
+    assert record is not None
+    expected = datetime.fromtimestamp(1782000000, tz=UTC).isoformat()
+    assert record.current_period_end == expected
     assert record.stripe_customer_id == "cus_test_1"
     assert record.plan_code == "pro"
     assert record.status == "active"
