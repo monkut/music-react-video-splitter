@@ -5,8 +5,9 @@ DynamoDB-backed ``/jobs`` API (+ ``/healthcheck``, ``/openapi``) and publishes
 accepted jobs to the configured SQS queue; sanji's own routes are registered on
 the returned Flask app afterward (extend pattern — no sandjig modifications).
 
-Lambda entrypoint lives in ``sanji.service.lambda_app`` (sandjig touches
-DynamoDB at app construction, so importing this module stays side-effect free).
+Lambda entrypoint lives in ``sanji.service.lambda_app``. Since sandjig#15,
+``create_app`` performs no AWS access at construction (DynamoDB init is
+deferred to the first request), so importing this module is side-effect free.
 """
 
 import os
@@ -15,7 +16,7 @@ from typing import Any, cast
 
 import boto3
 import structlog
-from flask import Flask, Response, jsonify, request, session
+from flask import Flask, Response, g, jsonify, request, session
 from pydantic import BaseModel
 from werkzeug.exceptions import HTTPException
 
@@ -73,42 +74,18 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> Flask:
     # before any AWS access
     secret_key = validate_secret_key_env_var()
 
-    config: dict[str, Any] = {
-        "API_TITLE": "sanji API",
-        "API_VERSION": API_VERSION,
-    }
-    if config_overrides:
-        config.update(config_overrides)
+    def authorize_job_request(payload: dict) -> tuple[Any, int] | None:
+        """sandjig JOBREQUEST_AUTHORIZATION_FUNCTION for ``POST /jobs`` (#30, #43).
 
-    app = create_sandjig_app(SanjiJobRequest, SanjiJobResult, config=config)
+        Authentication: anonymous submission is rejected with 401 — job
+        submission consumes metered compute and must be attributable.
 
-    # Signed session cookie configuration.
-    app.secret_key = secret_key
-    is_production = os.getenv("SANJI_ENVIRONMENT", "development") != "development"
-    app.config["SESSION_COOKIE_SECURE"] = is_production
-    app.config["SESSION_COOKIE_HTTPONLY"] = True
-    app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
-
-    @app.before_request
-    def handle_plan_enforcement():
-        """Authenticate and enforce plan limits before sandjig enqueues a job.
-
-        Authentication (#30): anonymous ``POST /jobs`` is rejected with 401 —
-        job submission consumes metered compute and must be attributable.
-
-        Enforcement A: Returns HTTP 402 when the authenticated user's monthly
+        Enforcement A: returns 402 when the authenticated user's monthly
         stream count has reached their plan cap.
 
-        Attribution (#30): overwrites any client-supplied ``user_id`` with the
-        session user so stored jobs are trustworthy for ownership checks.
-
-        Duration injection: Adds max_duration_seconds to the job params so the
-        async worker can enforce the per-video duration cap (enforcement B) without
-        needing to look up plan data from DynamoDB itself.
+        On success the resolved user/plan are stashed on ``flask.g`` for
+        ``transform_job_request`` so the lookups run once per request.
         """
-        if request.method != "POST" or request.path != "/jobs":
-            return None
-
         user_id: str | None = session.get(SESSION_USER_ID)
         if not user_id:
             return jsonify(
@@ -152,16 +129,45 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> Flask:
                 402,
             )
 
-        # Inject max_duration_seconds into params so the worker enforces duration (B),
-        # and overwrite user_id from the session (client-supplied values are ignored).
-        # Overwrite the request's cached JSON so sandjig reads the augmented body.
-        body = dict(request.get_json(silent=True, force=True) or {})
-        params = dict(body.get("params") or {})
-        params.setdefault("max_duration_seconds", plan.max_video_duration_seconds)
-        body["params"] = params
-        body["user_id"] = user_id
-        request._cached_json = (body, body)  # type: ignore[assignment]
+        g.job_request_user_id = user_id
+        g.job_request_plan = plan
         return None
+
+    def transform_job_request(payload: dict) -> dict:
+        """sandjig JOBREQUEST_TRANSFORM_FUNCTION: inject server-side fields (#43).
+
+        Overwrites any client-supplied ``user_id`` with the session user (#30)
+        and adds max_duration_seconds so the async worker enforces the per-video
+        duration cap (enforcement B) without its own plan lookup. Runs after
+        ``authorize_job_request``, which resolved the user/plan onto ``flask.g``.
+        """
+        params = dict(payload.get("params") or {})
+        params.setdefault(
+            "max_duration_seconds", g.job_request_plan.max_video_duration_seconds
+        )
+        payload["params"] = params
+        payload["user_id"] = g.job_request_user_id
+        return payload
+
+    config: dict[str, Any] = {
+        "API_TITLE": "sanji API",
+        "API_VERSION": API_VERSION,
+        # Supported sandjig request hooks (sandjig#14) — replaces the private
+        # request._cached_json mutation this app previously relied on (#43).
+        "JOBREQUEST_AUTHORIZATION_FUNCTION": authorize_job_request,
+        "JOBREQUEST_TRANSFORM_FUNCTION": transform_job_request,
+    }
+    if config_overrides:
+        config.update(config_overrides)
+
+    app = create_sandjig_app(SanjiJobRequest, SanjiJobResult, config=config)
+
+    # Signed session cookie configuration.
+    app.secret_key = secret_key
+    is_production = os.getenv("SANJI_ENVIRONMENT", "development") != "development"
+    app.config["SESSION_COOKIE_SECURE"] = is_production
+    app.config["SESSION_COOKIE_HTTPONLY"] = True
+    app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 
     @app.after_request
     def handle_usage_increment(response: Response) -> Response:
