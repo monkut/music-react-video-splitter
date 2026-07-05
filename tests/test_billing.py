@@ -302,6 +302,24 @@ def test_duplicate_webhook_event_is_idempotent(app_client, pro_price_id):
     assert retrieve_mock.call_count == 1
 
 
+@mock_aws
+def test_try_mark_processed_atomic_conditional_write(monkeypatch):
+    """try_mark_processed uses attribute_not_exists — first call wins, second returns False."""
+    monkeypatch.setenv("AWS_ACCESS_KEY_ID", "testing")
+    monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "testing")
+    monkeypatch.setenv("AWS_DEFAULT_REGION", "us-east-1")
+    boto3.client("dynamodb", region_name="us-east-1").create_table(
+        TableName=DEFAULT_WEBHOOK_EVENTS_TABLE,
+        AttributeDefinitions=[{"AttributeName": "stripe_event_id", "AttributeType": "S"}],
+        KeySchema=[{"AttributeName": "stripe_event_id", "KeyType": "HASH"}],
+        BillingMode="PAY_PER_REQUEST",
+    )
+    store = ProcessedEventStore(table_name=DEFAULT_WEBHOOK_EVENTS_TABLE)
+    assert store.try_mark_processed("evt_race_1") is True
+    assert store.try_mark_processed("evt_race_1") is False
+    assert store.is_processed("evt_race_1") is True
+
+
 def test_invalid_price_id_returns_422(app_client, pro_price_id):
     _seed_user(app_client)
     response = app_client.post(

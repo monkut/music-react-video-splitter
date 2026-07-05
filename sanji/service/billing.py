@@ -12,6 +12,7 @@ from typing import Any
 import boto3
 import stripe
 import structlog
+from botocore.exceptions import ClientError
 from flask import request
 from pydantic import BaseModel
 
@@ -101,12 +102,22 @@ class ProcessedEventStore:
         response = self._table.get_item(Key={"stripe_event_id": event_id})
         return response.get("Item") is not None
 
-    def mark_processed(self, event_id: str) -> None:
+    def try_mark_processed(self, event_id: str) -> bool:
+        """Atomically claim event_id. Returns True if this call won; False if already claimed."""
         record = ProcessedEventRecord(
             stripe_event_id=event_id,
             processed_at=datetime.now(UTC).isoformat(),
         )
-        self._table.put_item(Item=record.model_dump())
+        try:
+            self._table.put_item(
+                Item=record.model_dump(),
+                ConditionExpression="attribute_not_exists(stripe_event_id)",
+            )
+            return True
+        except ClientError as exc:
+            if exc.response["Error"]["Code"] == "ConditionalCheckFailedException":
+                return False
+            raise
 
 
 def _plan_code_for_price_id(price_id: str) -> str | None:
@@ -169,12 +180,9 @@ class BillingService:
         )
         return customer.id
 
-    def handle_webhook(self, payload: bytes, sig_header: str) -> None:
-        event = stripe.Webhook.construct_event(
-            payload, sig_header, os.getenv("STRIPE_WEBHOOK_SECRET", "")
-        )
+    def handle_webhook(self, event: dict[str, Any]) -> None:
         event_id = event["id"]
-        if self._processed_events.is_processed(event_id):
+        if not self._processed_events.try_mark_processed(event_id):
             logger.info("webhook_event_duplicate", event_id=event_id)
             return
 
@@ -185,7 +193,6 @@ class BillingService:
             )
         else:
             handler(event)
-        self._processed_events.mark_processed(event_id)
 
     def _event_handlers(self) -> dict[str, Any]:
         return {
@@ -300,8 +307,11 @@ def handle_stripe_webhook(billing_service: BillingService) -> tuple[dict, int]:
     payload = request.get_data()
     sig_header = request.headers.get("Stripe-Signature", "")
     try:
-        billing_service.handle_webhook(payload, sig_header)
+        event = stripe.Webhook.construct_event(
+            payload, sig_header, os.getenv("STRIPE_WEBHOOK_SECRET", "")
+        )
     except (ValueError, stripe.SignatureVerificationError) as exc:
         logger.warning("webhook_signature_invalid", error=str(exc))
         return {"error": "invalid_signature"}, 400
+    billing_service.handle_webhook(event)
     return {"status": "ok"}, 200

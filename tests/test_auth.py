@@ -223,13 +223,13 @@ def test_google_callback_rejects_state_mismatch(app_client, monkeypatch):
 
 
 def test_logout_clears_session(app_client, monkeypatch):
-    """GET /auth/logout clears the session and returns 204."""
+    """POST /auth/logout clears the session and returns 204."""
     _mock_flow_and_verify(monkeypatch)
 
     with app_client.session_transaction() as sess:
         sess["user_id"] = "some-user-id"
 
-    response = app_client.get("/auth/logout")
+    response = app_client.post("/auth/logout")
     assert response.status_code == 204
 
     with app_client.session_transaction() as sess:

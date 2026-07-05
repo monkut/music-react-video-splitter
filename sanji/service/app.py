@@ -287,7 +287,7 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> Flask:
     def stripe_webhook() -> tuple[dict, int]:
         return handle_stripe_webhook(billing_service)
 
-    @app.get("/auth/logout")
+    @app.post("/auth/logout")
     def logout() -> tuple[str, int]:
         from flask import session as flask_session
 
