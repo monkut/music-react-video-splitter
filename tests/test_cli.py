@@ -107,8 +107,8 @@ class TestMain:
         m_extract.assert_called_once()
         m_classify.assert_called_once()
         out = capsys.readouterr().out
-        assert "song regions" in out
-        assert "Dry run" in out
+        assert "song_regions_detected" in out
+        assert "dry_run_skipping_split" in out
 
     def test_transcription_step_invoked_when_not_skipped(
         self, local_video, tmp_path, monkeypatch

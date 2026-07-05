@@ -8,6 +8,7 @@ import numpy as np
 
 from sanji.settings import (
     DEFAULT_DENSITY_STEP,
+    DEFAULT_WINDOW_SIZE,
     MUSIC_LABELS,
     SPLIT_GAP_BIAS,
     VALIDATION_TOLERANCE,
@@ -18,7 +19,7 @@ from sanji.utils import format_time, parse_artist_song
 def compute_music_density(
     segments: list[tuple[str, float, float]],
     total_duration: float,
-    window_size: float = 120.0,
+    window_size: float = DEFAULT_WINDOW_SIZE,
     step: float = DEFAULT_DENSITY_STEP,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Compute music density over time using a sliding window.
