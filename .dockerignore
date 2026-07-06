@@ -1,0 +1,17 @@
+# Keep the Batch worker build context minimal — only pyproject/uv.lock/README/sanji
+# are COPYed by infra/worker/Dockerfile.
+.git
+.venv
+.github
+tests
+test-reports
+output
+data
+infra
+.idea
+.vscode
+**/__pycache__
+**/*.pyc
+*.egg-info
+git-workflow.local.md
+zappa_settings.json
