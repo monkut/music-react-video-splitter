@@ -66,4 +66,4 @@ pythonpath = ["."]
 # Pinned to an explicit rev (#45): tracking branch="main" let any `uv lock
 # --upgrade` silently adopt unreviewed upstream HEAD. Bump deliberately:
 # update the rev to the reviewed sandjig commit/tag, then `uv lock`.
-sandjig = { git = "https://github.com/monkut/sandjig.git", rev = "f2adae3688587811cd8047873b92599f4a613011" }
+sandjig = { git = "https://github.com/monkut/sandjig.git", rev = "d45cad4f36cd59ae1d6e915343c61c071b3a9c6a" }

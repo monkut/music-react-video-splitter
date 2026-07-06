@@ -25,7 +25,7 @@ import structlog
 from pynamodb.exceptions import UpdateError
 
 from sandjig.functions import get_timestamp_now
-from sandjig.jobsapi.dyanmodb.models import ItemDoesNotExistError, ProcessingJobModel
+from sandjig.jobsapi.dynamodb.models import ItemDoesNotExistError, ProcessingJobModel
 
 from sanji.service.jobs import STATUS_COMPLETED, STATUS_ERROR, SanjiJobResult
 
