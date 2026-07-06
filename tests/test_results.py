@@ -9,7 +9,7 @@ import boto3
 import pytest
 from moto import mock_aws
 
-from sandjig.jobsapi.dyanmodb.models import ProcessingJobModel
+from sandjig.jobsapi.dynamodb.models import ProcessingJobModel
 
 from sanji.service.jobs import STATUS_COMPLETED, STATUS_ERROR, SanjiJobResult
 from sanji.service.results import handle_batch_state_change, handle_result_event

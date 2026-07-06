@@ -10,7 +10,7 @@ import boto3
 import pytest
 from moto import mock_aws
 
-from sandjig.jobsapi.dyanmodb.models import ProcessingJobModel
+from sandjig.jobsapi.dynamodb.models import ProcessingJobModel
 
 from sanji.service.app import create_app
 from sanji.service.plans import DEFAULT_PLAN_CODE, PLANS, get_plan

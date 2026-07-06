@@ -20,7 +20,7 @@ from flask import Flask, Response, g, jsonify, request, session
 from pydantic import BaseModel
 from werkzeug.exceptions import HTTPException
 
-from sandjig.jobsapi.dyanmodb.models import ItemDoesNotExistError, ProcessingJobModel
+from sandjig.jobsapi.dynamodb.models import ItemDoesNotExistError, ProcessingJobModel
 
 from sanji.service.auth import (
     SESSION_USER_ID,
