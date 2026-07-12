@@ -1,0 +1,220 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  sanji compute plane (#11): the async worker path. AWS Batch (Fargate Spot) runs
+  the sanji pipeline container; an EventBridge Pipe forwards jobs SQS messages to
+  Batch SubmitJob (no dispatcher Lambda); a Batch Job State Change rule is the
+  safety net for hard failures. Imports the sandjig-owned jobs queue and the sanji
+  results bucket rather than re-declaring them (SoC seam).
+
+Parameters:
+
+  Stage:
+    Type: String
+    Default: dev
+
+  WorkerImageUri:
+    Type: String
+    Description: ECR image URI for the sanji worker (e.g. <acct>.dkr.ecr.<region>.amazonaws.com/sanji-worker:dev)
+
+  SubnetIds:
+    Type: List<AWS::EC2::Subnet::Id>
+    Description: Public subnets for Fargate tasks (default-VPC public subnets)
+
+  SecurityGroupId:
+    Type: AWS::EC2::SecurityGroup::Id
+    Description: Security group for Fargate tasks (egress only)
+
+  JobsQueueName:
+    Type: String
+    Description: sandjig jobs SQS queue name (from sandjig-resources-dev export)
+    Default: sanji-sdjobs-eph-dev
+
+  ResultsBucketArnImport:
+    Type: String
+    Default: sanji-resources-dev-ResultsBucketArn
+
+  ResultsBucketNameImport:
+    Type: String
+    Default: sanji-resources-dev-ResultsBucketName
+
+Resources:
+
+  # ---- IAM ----
+
+  # Worker task role: S3 PutObject only (the locked decoupling boundary).
+  WorkerTaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: { Service: ecs-tasks.amazonaws.com }
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: results-put
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: s3:PutObject
+                Resource: !Sub
+                  - '${BucketArn}/*'
+                  - BucketArn: !ImportValue { 'Fn::Sub': '${ResultsBucketArnImport}' }
+
+  # Execution role: pull the image from ECR + write task logs.
+  BatchExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: { Service: ecs-tasks.amazonaws.com }
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+
+  # Pipe role: read the jobs queue + submit Batch jobs.
+  PipeRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: { Service: pipes.amazonaws.com }
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: pipe-sqs-to-batch
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - sqs:ReceiveMessage
+                  - sqs:DeleteMessage
+                  - sqs:GetQueueAttributes
+                Resource: !Sub 'arn:aws:sqs:${AWS::Region}:${AWS::AccountId}:${JobsQueueName}'
+              - Effect: Allow
+                Action: batch:SubmitJob
+                Resource:
+                  - !Ref WorkerJobQueue
+                  - !Ref WorkerJobDefinition
+
+  # ---- AWS Batch (Fargate Spot) ----
+
+  WorkerComputeEnvironment:
+    Type: AWS::Batch::ComputeEnvironment
+    Properties:
+      Type: MANAGED
+      State: ENABLED
+      ComputeResources:
+        Type: FARGATE_SPOT
+        MaxvCpus: 16
+        Subnets: !Ref SubnetIds
+        SecurityGroupIds:
+          - !Ref SecurityGroupId
+
+  WorkerJobQueue:
+    Type: AWS::Batch::JobQueue
+    Properties:
+      Priority: 1
+      State: ENABLED
+      ComputeEnvironmentOrder:
+        - Order: 1
+          ComputeEnvironment: !Ref WorkerComputeEnvironment
+
+  WorkerJobDefinition:
+    Type: AWS::Batch::JobDefinition
+    Properties:
+      Type: container
+      PlatformCapabilities: [FARGATE]
+      ContainerProperties:
+        Image: !Ref WorkerImageUri
+        JobRoleArn: !GetAtt WorkerTaskRole.Arn
+        ExecutionRoleArn: !GetAtt BatchExecutionRole.Arn
+        ResourceRequirements:
+          - Type: VCPU
+            Value: '2'
+          - Type: MEMORY
+            Value: '8192'
+        EphemeralStorage:
+          SizeInGiB: 50
+        NetworkConfiguration:
+          AssignPublicIp: ENABLED
+        Environment:
+          - Name: AWS_ACCOUNT_ID
+            Value: !Ref AWS::AccountId
+          - Name: AWS_DEFAULT_REGION
+            Value: !Ref AWS::Region
+          - Name: SANJI_RESULTS_BUCKET
+            Value: !ImportValue { 'Fn::Sub': '${ResultsBucketNameImport}' }
+        LogConfiguration:
+          LogDriver: awslogs
+
+  # ---- EventBridge Pipe: jobs SQS -> Batch SubmitJob ----
+  # The SQS message body IS the sanji job message; forward it verbatim into the
+  # SANJI_JOB_MESSAGE container env the worker reads.
+
+  JobsPipe:
+    Type: AWS::Pipes::Pipe
+    Properties:
+      Name: !Sub 'sanji-jobs-${Stage}'
+      RoleArn: !GetAtt PipeRole.Arn
+      Source: !Sub 'arn:aws:sqs:${AWS::Region}:${AWS::AccountId}:${JobsQueueName}'
+      SourceParameters:
+        SqsQueueParameters:
+          BatchSize: 1
+      Target: !Ref WorkerJobQueue
+      TargetParameters:
+        BatchJobParameters:
+          JobDefinition: !Ref WorkerJobDefinition
+          JobName: !Sub 'sanji-worker-${Stage}'
+          ContainerOverrides:
+            Environment:
+              - Name: SANJI_JOB_MESSAGE
+                Value: $.body
+
+  # ---- Safety net: Batch job hard-failure -> (future) handler ----
+  # Fires on FAILED jobs that never wrote result.json (Spot reclaim, OOM, timeout).
+  # Target is added once the Zappa batch-state handler is deployed; for now the
+  # rule captures the events to CloudWatch Logs for visibility.
+
+  BatchStateRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub 'sanji-batch-failed-${Stage}'
+      EventPattern:
+        source: [aws.batch]
+        detail-type: [Batch Job State Change]
+        detail:
+          status: [FAILED]
+          jobQueue: [!Ref WorkerJobQueue]
+      State: ENABLED
+      Targets:
+        - Id: log
+          Arn: !GetAtt BatchFailureLogGroup.Arn
+
+  BatchFailureLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/sanji/batch-failures-${Stage}'
+      RetentionInDays: 14
+
+Outputs:
+
+  WorkerJobQueueArn:
+    Value: !Ref WorkerJobQueue
+    Export:
+      Name: !Sub 'sanji-compute-${Stage}-WorkerJobQueueArn'
+
+  WorkerJobDefinitionArn:
+    Value: !Ref WorkerJobDefinition
+    Export:
+      Name: !Sub 'sanji-compute-${Stage}-WorkerJobDefinitionArn'
+
+  JobsPipeName:
+    Value: !Ref JobsPipe
+    Export:
+      Name: !Sub 'sanji-compute-${Stage}-JobsPipeName'

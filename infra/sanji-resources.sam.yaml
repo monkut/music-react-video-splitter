@@ -1,0 +1,146 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  sanji SaaS data-plane (#11): the DynamoDB tables and S3 results bucket owned by
+  the sanji service tier. sandjig owns the jobs queue + jobs/settings tables via
+  its own resources stack (sandjig template --resources-only) — this stack does
+  NOT re-declare those; it imports them at the compute layer. All tables are
+  PAY_PER_REQUEST so the stack has no idle cost (matches the locked DynamoDB / no-RDS decision).
+
+Parameters:
+
+  Stage:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, stg, prd]
+
+  Prefix:
+    Type: String
+    Default: sanji
+
+Resources:
+
+  # ---- SaaS DynamoDB tables (keys mirror sanji/service/{users,billing,usage}.py) ----
+
+  UsersTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${Prefix}-users-${Stage}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: user_id
+          AttributeType: S
+        - AttributeName: google_sub
+          AttributeType: S
+      KeySchema:
+        - AttributeName: user_id
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: google_sub-index
+          KeySchema:
+            - AttributeName: google_sub
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+
+  SubscriptionsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${Prefix}-subscriptions-${Stage}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: user_id
+          AttributeType: S
+        - AttributeName: stripe_customer_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: user_id
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: stripe_customer_id-index
+          KeySchema:
+            - AttributeName: stripe_customer_id
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+
+  WebhookEventsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${Prefix}-webhook-events-${Stage}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: stripe_event_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: stripe_event_id
+          KeyType: HASH
+
+  UsageTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${Prefix}-usage-${Stage}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: user_id
+          AttributeType: S
+        - AttributeName: period_key
+          AttributeType: S
+      KeySchema:
+        - AttributeName: user_id
+          KeyType: HASH
+        - AttributeName: period_key
+          KeyType: RANGE
+
+  # ---- S3 results bucket ----
+  # The worker writes segments + manifest + result.json here (result.json last =
+  # completion marker). The S3 ObjectCreated(result.json) -> handler notification
+  # is wired by Zappa's `events` binding (it owns the bucket notification config),
+  # so it is intentionally NOT declared here to avoid a CFN/Zappa conflict.
+
+  ResultsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub '${Prefix}-results-${Stage}-${AWS::AccountId}'
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      LifecycleConfiguration:
+        Rules:
+          # Dev is ephemeral — expire results so the bucket never accrues cost.
+          - Id: expire-dev-results
+            Status: Enabled
+            ExpirationInDays: 7
+
+Outputs:
+
+  UsersTableName:
+    Value: !Ref UsersTable
+    Export:
+      Name: !Sub '${AWS::StackName}-UsersTableName'
+
+  SubscriptionsTableName:
+    Value: !Ref SubscriptionsTable
+    Export:
+      Name: !Sub '${AWS::StackName}-SubscriptionsTableName'
+
+  WebhookEventsTableName:
+    Value: !Ref WebhookEventsTable
+    Export:
+      Name: !Sub '${AWS::StackName}-WebhookEventsTableName'
+
+  UsageTableName:
+    Value: !Ref UsageTable
+    Export:
+      Name: !Sub '${AWS::StackName}-UsageTableName'
+
+  ResultsBucketName:
+    Value: !Ref ResultsBucket
+    Export:
+      Name: !Sub '${AWS::StackName}-ResultsBucketName'
+
+  ResultsBucketArn:
+    Value: !GetAtt ResultsBucket.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-ResultsBucketArn'
