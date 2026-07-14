@@ -6,7 +6,8 @@ Pipe forwards from the jobs SQS queue — runs the pipeline, streams the segment
 files and manifest to S3, then writes ``result.json`` **last** as the completion
 marker the system-of-record watches for.
 
-Boundary (locked 2026-06-01): the worker touches **S3 only** (``s3:PutObject``).
+Boundary (locked 2026-06-01, extended for #65): the worker touches **S3 only**
+— ``s3:PutObject`` on results plus ``s3:GetObject`` on user uploads.
 No DynamoDB, no API, no SQS. A caught pipeline failure is still reported as a
 terminal ``result.json`` (``status=error``); hard kills (Spot reclaim, OOM,
 timeout) leave no marker and are handled by the Batch state-change safety net.
