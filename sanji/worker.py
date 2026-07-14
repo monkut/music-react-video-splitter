@@ -37,6 +37,7 @@ from sanji.settings import (
     RESULT_MARKER_NAME,
     RESULTS_BUCKET_ENV,
     RESULTS_ROOT,
+    UPLOADS_BUCKET_ENV,
 )
 
 logger = structlog.get_logger().bind(logger=__name__)
@@ -99,18 +100,41 @@ def parse_job_message(raw: str) -> tuple[str, SanjiJobRequest]:
     return job_id, SanjiJobRequest.model_validate(payload)
 
 
-def build_pipeline_params(request: SanjiJobRequest, output_dir: Path) -> PipelineParams:
+def build_pipeline_params(
+    request: SanjiJobRequest,
+    output_dir: Path,
+    *,
+    input_override: str | None = None,
+) -> PipelineParams:
     """Map the request payload onto ``PipelineParams``, honoring known overrides only.
 
-    ``max_duration_seconds`` may be injected by the API layer (via request.params)
-    when plan enforcement is needed. Unknown keys are silently dropped.
+    ``input_override`` carries the local path of an S3-fetched source (#65);
+    without it the input is the request's YouTube URL. ``max_duration_seconds``
+    may be injected by the API layer (via request.params) when plan enforcement
+    is needed. Unknown keys are silently dropped.
     """
     tunable = {f.name for f in dataclasses.fields(PipelineParams)} - {
         "input",
         "output_dir",
     }
     overrides = {key: value for key, value in request.params.items() if key in tunable}
-    return PipelineParams(input=request.input_url, output_dir=output_dir, **overrides)
+    input_source = input_override or request.input_url
+    if not input_source:
+        raise ValueError("job has neither a fetched source nor an input_url")
+    return PipelineParams(input=input_source, output_dir=output_dir, **overrides)
+
+
+def fetch_source_from_s3(s3_client: Any, bucket: str, key: str, dest_dir: Path) -> Path:
+    """Download the user-uploaded source object into the job's scratch dir (#65).
+
+    ``download_file`` streams via managed multipart — sources can be multi-GB
+    and must never be read wholly into the container's memory (#38).
+    """
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    dest = dest_dir / key.rsplit("/", 1)[-1]
+    s3_client.download_file(bucket, key, str(dest))
+    logger.info("source_fetched", bucket=bucket, key=key, bytes=dest.stat().st_size)
+    return dest
 
 
 def _build_result(
@@ -131,7 +155,12 @@ def _build_result(
 
 
 def process_job(
-    job_id: str, request: SanjiJobRequest, bucket: str, *, s3_client: Any = None
+    job_id: str,
+    request: SanjiJobRequest,
+    bucket: str,
+    *,
+    uploads_bucket: str | None = None,
+    s3_client: Any = None,
 ) -> SanjiJobResult:
     """Run the pipeline for one job and land its artifacts in S3.
 
@@ -139,17 +168,33 @@ def process_job(
     pipeline failure a terminal ``status=error`` marker is written and returned, so
     the system-of-record always sees a completion signal for graceful failures.
     """
+    s3 = s3_client or boto3.client("s3")
     prefix = f"{RESULTS_ROOT}/{job_id}"
-    uploader = ResultUploader(bucket, prefix, s3_client=s3_client)
+    uploader = ResultUploader(bucket, prefix, s3_client=s3)
     logger.info(
-        "job_started", job_id=job_id, input_url=request.input_url, bucket=bucket
+        "job_started",
+        job_id=job_id,
+        input_url=request.input_url,
+        source_s3_key=request.source_s3_key,
+        bucket=bucket,
     )
 
     with tempfile.TemporaryDirectory(prefix=f"sanji_{job_id}_") as scratch:
         scratch_dir = Path(scratch)
         try:
+            input_override = None
+            if request.source_s3_key:
+                source_path = fetch_source_from_s3(
+                    s3,
+                    uploads_bucket or bucket,
+                    request.source_s3_key,
+                    scratch_dir / "source",
+                )
+                input_override = str(source_path)
             pipeline_result = run_pipeline(
-                build_pipeline_params(request, scratch_dir / "output"),
+                build_pipeline_params(
+                    request, scratch_dir / "output", input_override=input_override
+                ),
                 work_dir=scratch_dir / "work",
             )
         except Exception as exc:  # noqa: BLE001 — any failure becomes a terminal marker
@@ -188,7 +233,9 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     job_id, request = parse_job_message(raw)
-    result = process_job(job_id, request, bucket)
+    result = process_job(
+        job_id, request, bucket, uploads_bucket=os.getenv(UPLOADS_BUCKET_ENV)
+    )
     return 0 if result.status == STATUS_COMPLETED else 1
 
 

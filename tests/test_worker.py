@@ -6,6 +6,7 @@ the completion marker, and a pipeline failure still produces a terminal marker.
 """
 
 import json
+from pathlib import Path
 
 import boto3
 import pytest
@@ -176,3 +177,62 @@ def test_process_job_writes_error_marker_on_failure(s3, monkeypatch):
     assert result.error == "download failed"
     keys = _list_keys(s3)
     assert keys == [f"{RESULTS_ROOT}/{JOB_ID}/result.json"]  # no segments on failure
+
+
+# ---------------------------------------------------------------------------
+# S3-sourced jobs (issue #65) — source_s3_key replaces the yt-dlp download
+# ---------------------------------------------------------------------------
+
+UPLOADS_BUCKET = "sanji-uploads-test"
+SOURCE_KEY = "uploads/user-1/up-1/source.mp4"
+
+
+@pytest.fixture
+def uploads_bucket(s3):
+    s3.create_bucket(
+        Bucket=UPLOADS_BUCKET,
+        CreateBucketConfiguration={"LocationConstraint": "us-west-2"},
+    )
+    return s3
+
+
+def test_process_job_fetches_source_from_s3(uploads_bucket, tmp_path, monkeypatch):
+    """The pipeline receives a local file downloaded from the uploads bucket."""
+    s3 = uploads_bucket
+    s3.put_object(Bucket=UPLOADS_BUCKET, Key=SOURCE_KEY, Body=b"uploaded-video-bytes")
+
+    captured = {}
+
+    def fake_pipeline(params, work_dir=None):
+        captured["input"] = params.input
+        captured["bytes"] = Path(params.input).read_bytes()
+        return _fake_pipeline_result(tmp_path)
+
+    monkeypatch.setattr("sanji.worker.run_pipeline", fake_pipeline)
+    request = SanjiJobRequest(source_s3_key=SOURCE_KEY, user_id="user-1")
+
+    result = process_job(
+        JOB_ID, request, BUCKET, uploads_bucket=UPLOADS_BUCKET, s3_client=s3
+    )
+
+    assert result.status == STATUS_COMPLETED
+    assert not captured["input"].startswith("https://")  # local path, not a URL
+    assert captured["bytes"] == b"uploaded-video-bytes"
+    assert f"{RESULTS_ROOT}/{JOB_ID}/result.json" in _list_keys(s3)
+
+
+def test_process_job_missing_source_writes_error_marker(uploads_bucket, monkeypatch):
+    """A fetch failure is a graceful failure: terminal error marker, no crash."""
+    s3 = uploads_bucket
+    monkeypatch.setattr(
+        "sanji.worker.run_pipeline",
+        lambda *a, **k: pytest.fail("pipeline must not run when the fetch fails"),
+    )
+    request = SanjiJobRequest(source_s3_key=SOURCE_KEY, user_id="user-1")
+
+    result = process_job(
+        JOB_ID, request, BUCKET, uploads_bucket=UPLOADS_BUCKET, s3_client=s3
+    )
+
+    assert result.status == STATUS_ERROR
+    assert result.error
