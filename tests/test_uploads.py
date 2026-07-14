@@ -17,7 +17,12 @@ from moto import mock_aws
 from pydantic import ValidationError
 
 from sanji.service.app import create_app
-from sanji.service.jobs import SanjiJobRequest, is_user_upload_key
+from sanji.service.jobs import (
+    SanjiJobRequest,
+    build_upload_key,
+    is_user_upload_key,
+    split_upload_key,
+)
 from sanji.service.uploads import CONTENT_TYPE_EXTENSIONS
 from sanji.service.usage import DEFAULT_USAGE_TABLE
 from sanji.service.users import GOOGLE_SUB_INDEX, UserStore
@@ -25,7 +30,6 @@ from sanji.settings import (
     UPLOAD_MULTIPART_THRESHOLD_BYTES,
     UPLOAD_PART_BYTES,
     UPLOAD_PRESIGN_EXPIRY_SECONDS,
-    UPLOADS_BUCKET_ENV,
     UPLOADS_ROOT,
 )
 from sanji.worker import parse_job_message
@@ -78,7 +82,7 @@ def tables():
 @pytest.fixture
 def authed_client(tables, monkeypatch):
     """Authenticated test client with the uploads bucket + env in place."""
-    monkeypatch.setenv(UPLOADS_BUCKET_ENV, UPLOADS_BUCKET)
+    monkeypatch.setenv("SANJI_UPLOADS_BUCKET", UPLOADS_BUCKET)
     with mock_aws():
         s3 = boto3.client("s3", region_name="us-west-2")
         s3.create_bucket(
@@ -379,6 +383,13 @@ def test_worker_rejects_injected_foreign_source_key_message():
     )
     with pytest.raises(ValidationError):
         parse_job_message(raw)
+
+
+def test_build_upload_key_round_trips_through_split_and_ownership():
+    key = build_upload_key("u1", "up1", ".mp4")
+    assert key == "uploads/u1/up1/source.mp4"
+    assert split_upload_key(key) == ["uploads", "u1", "up1", "source.mp4"]
+    assert is_user_upload_key(key, "u1")
 
 
 def test_is_user_upload_key():

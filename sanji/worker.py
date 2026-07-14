@@ -23,9 +23,9 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
-import boto3
 import structlog
 
+from sanji.aws import get_s3_client
 from sanji.pipeline import PipelineParams, PipelineResult, run_pipeline
 from sanji.service.jobs import (
     STATUS_COMPLETED,
@@ -38,7 +38,7 @@ from sanji.settings import (
     RESULT_MARKER_NAME,
     RESULTS_BUCKET_ENV,
     RESULTS_ROOT,
-    UPLOADS_BUCKET_ENV,
+    get_uploads_bucket,
 )
 
 logger = structlog.get_logger().bind(logger=__name__)
@@ -50,7 +50,7 @@ class ResultUploader:
     def __init__(self, bucket: str, prefix: str, *, s3_client: Any = None) -> None:
         self._bucket = bucket
         self._prefix = prefix.rstrip("/")
-        self._s3 = s3_client or boto3.client("s3")
+        self._s3 = s3_client or get_s3_client()
 
     def _put(self, key: str, body: bytes, content_type: str) -> str:
         self._s3.put_object(
@@ -169,7 +169,7 @@ def process_job(
     pipeline failure a terminal ``status=error`` marker is written and returned, so
     the system-of-record always sees a completion signal for graceful failures.
     """
-    s3 = s3_client or boto3.client("s3")
+    s3 = s3_client or get_s3_client()
     prefix = f"{RESULTS_ROOT}/{job_id}"
     uploader = ResultUploader(bucket, prefix, s3_client=s3)
     logger.info(
@@ -234,9 +234,7 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     job_id, request = parse_job_message(raw)
-    result = process_job(
-        job_id, request, bucket, uploads_bucket=os.getenv(UPLOADS_BUCKET_ENV)
-    )
+    result = process_job(job_id, request, bucket, uploads_bucket=get_uploads_bucket())
     return 0 if result.status == STATUS_COMPLETED else 1
 
 

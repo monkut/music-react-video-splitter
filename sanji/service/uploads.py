@@ -14,16 +14,15 @@ from typing import Any, TypeVar
 
 import structlog
 from botocore.exceptions import ClientError
-from flask import Request, jsonify
+from flask import Request, Response, jsonify
 from pydantic import BaseModel, Field, ValidationError
 
-from sanji.service.jobs import is_user_upload_key
+from sanji.service.jobs import build_upload_key, is_user_upload_key
 from sanji.settings import (
     UPLOAD_MAX_BYTES,
     UPLOAD_MULTIPART_THRESHOLD_BYTES,
     UPLOAD_PART_BYTES,
     UPLOAD_PRESIGN_EXPIRY_SECONDS,
-    UPLOADS_ROOT,
     get_uploads_bucket,
 )
 
@@ -59,10 +58,12 @@ class CompleteUploadRequest(BaseModel):
     parts: list[UploadPart] = Field(min_length=1)
 
 
-ModelT = TypeVar("ModelT", bound=BaseModel)
+PydanticBaseModelType = TypeVar("PydanticBaseModelType", bound=BaseModel)
 
 
-def _parse_body(request: Request, model: type[ModelT]) -> ModelT | tuple[Any, int]:
+def _parse_body(
+    request: Request, model: type[PydanticBaseModelType]
+) -> PydanticBaseModelType | tuple[Response, int]:
     payload = request.get_json(silent=True)
     if payload is None:
         return jsonify(error="invalid_request", message="JSON body required."), 422
@@ -72,13 +73,17 @@ def _parse_body(request: Request, model: type[ModelT]) -> ModelT | tuple[Any, in
         return jsonify(error="invalid_request", message=str(exc)), 422
 
 
-def handle_create_upload(request: Request, user_id: str, s3_client: Any):
+def handle_create_upload(
+    request: Request, user_id: str, s3_client: Any
+) -> tuple[Response, int]:
     """POST /uploads — issue presigned upload URL(s) under the user's prefix."""
     parsed = _parse_body(request, UploadRequest)
     if isinstance(parsed, tuple):
         return parsed
     upload = parsed
 
+    # Enforce the video content-type allowlist: an unknown type is rejected
+    # (415), an allowed one maps to the file extension the stored key gets.
     extension = CONTENT_TYPE_EXTENSIONS.get(upload.content_type)
     if extension is None:
         return jsonify(
@@ -98,8 +103,9 @@ def handle_create_upload(request: Request, user_id: str, s3_client: Any):
         return jsonify(error="internal_server_error"), 500
 
     upload_id = uuid.uuid4().hex
-    key = f"{UPLOADS_ROOT}/{user_id}/{upload_id}/source{extension}"
-    base = {
+    key = build_upload_key(user_id, upload_id, extension)
+    # Response fields shared by both reply shapes (single PUT and multipart).
+    common_response_fields = {
         "upload_id": upload_id,
         "key": key,
         "expires_in": UPLOAD_PRESIGN_EXPIRY_SECONDS,
@@ -120,7 +126,7 @@ def handle_create_upload(request: Request, user_id: str, s3_client: Any):
         )
         logger.info("upload_created", key=key, method="put", user_id=user_id)
         return jsonify(
-            **base,
+            **common_response_fields,
             method="put",
             url=url,
             headers={
@@ -157,7 +163,7 @@ def handle_create_upload(request: Request, user_id: str, s3_client: Any):
         "upload_created", key=key, method="multipart", parts=part_count, user_id=user_id
     )
     return jsonify(
-        **base,
+        **common_response_fields,
         method="multipart",
         s3_upload_id=s3_upload_id,
         part_size=part_size,
@@ -165,7 +171,9 @@ def handle_create_upload(request: Request, user_id: str, s3_client: Any):
     ), 201
 
 
-def handle_complete_upload(request: Request, user_id: str, s3_client: Any):
+def handle_complete_upload(
+    request: Request, user_id: str, s3_client: Any
+) -> tuple[Response, int]:
     """POST /uploads/complete — finish a multipart upload and enforce the cap."""
     parsed = _parse_body(request, CompleteUploadRequest)
     if isinstance(parsed, tuple):

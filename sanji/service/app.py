@@ -14,7 +14,6 @@ import os
 from datetime import UTC, datetime
 from typing import Any, cast
 
-import boto3
 import structlog
 from flask import Flask, Response, g, jsonify, request, session
 from pydantic import BaseModel
@@ -22,6 +21,7 @@ from werkzeug.exceptions import HTTPException
 
 from sandjig.jobsapi.dynamodb.models import ItemDoesNotExistError, ProcessingJobModel
 
+from sanji.aws import get_s3_client
 from sanji.service.auth import (
     SESSION_USER_ID,
     CurrentUser,
@@ -82,7 +82,7 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> Flask:
     user_store = UserStore()
     usage_store = UsageStore()
     billing_service = BillingService(user_store=user_store)
-    s3_client = boto3.client("s3")
+    s3_client = get_s3_client()
 
     def authorize_job_request(payload: dict) -> tuple[Any, int] | None:
         """sandjig JOBREQUEST_AUTHORIZATION_FUNCTION for ``POST /jobs`` (#30, #43).

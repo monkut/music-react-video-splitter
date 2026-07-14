@@ -36,6 +36,14 @@ UPLOAD_KEY_SEGMENT_COUNT = 4
 _FORBIDDEN_KEY_SEGMENTS = frozenset({"", ".", ".."})
 
 
+def build_upload_key(user_id: str, upload_id: str, extension: str) -> str:
+    """Compose the canonical uploads key: uploads/<user_id>/<upload_id>/source<ext>.
+
+    Counterpart of ``split_upload_key`` — the key shape is defined only here.
+    """
+    return f"{UPLOADS_ROOT}/{user_id}/{upload_id}/source{extension}"
+
+
 def split_upload_key(key: str) -> list[str] | None:
     """Return the key's segments when it has the uploads shape, else None."""
     segments = key.split("/")
