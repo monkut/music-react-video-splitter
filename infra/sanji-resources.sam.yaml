@@ -113,6 +113,42 @@ Resources:
             Status: Enabled
             ExpirationInDays: 7
 
+  # ---- S3 uploads bucket (#65) ----
+  # Users PUT their source VODs here via presigned URLs issued by the API; the
+  # worker reads the source at job time. Separate from the results bucket so
+  # uploads never trigger the Zappa result.json notification binding, and so
+  # CORS/lifecycle rules stay independent. Browser uploads require CORS on the
+  # presigned PUT / UploadPart requests, and multipart completion needs the
+  # ETag response header exposed cross-origin.
+
+  UploadsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub '${Prefix}-uploads-${Stage}-${AWS::AccountId}'
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      CorsConfiguration:
+        CorsRules:
+          - AllowedMethods: [PUT]
+            AllowedOrigins: ['*']
+            AllowedHeaders: ['*']
+            ExposedHeaders: [ETag]
+            MaxAge: 3600
+      LifecycleConfiguration:
+        Rules:
+          # Raw uploads are transient job inputs — expire them after processing.
+          - Id: expire-uploads
+            Status: Enabled
+            ExpirationInDays: 7
+          # Abandoned multipart uploads accrue storage cost invisibly.
+          - Id: abort-incomplete-multipart
+            Status: Enabled
+            AbortIncompleteMultipartUpload:
+              DaysAfterInitiation: 1
+
 Outputs:
 
   UsersTableName:
@@ -144,3 +180,13 @@ Outputs:
     Value: !GetAtt ResultsBucket.Arn
     Export:
       Name: !Sub '${AWS::StackName}-ResultsBucketArn'
+
+  UploadsBucketName:
+    Value: !Ref UploadsBucket
+    Export:
+      Name: !Sub '${AWS::StackName}-UploadsBucketName'
+
+  UploadsBucketArn:
+    Value: !GetAtt UploadsBucket.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-UploadsBucketArn'

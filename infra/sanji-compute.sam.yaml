@@ -37,11 +37,20 @@ Parameters:
     Type: String
     Default: sanji-resources-dev-ResultsBucketName
 
+  UploadsBucketArnImport:
+    Type: String
+    Default: sanji-resources-dev-UploadsBucketArn
+
+  UploadsBucketNameImport:
+    Type: String
+    Default: sanji-resources-dev-UploadsBucketName
+
 Resources:
 
   # ---- IAM ----
 
-  # Worker task role: S3 PutObject only (the locked decoupling boundary).
+  # Worker task role: S3 only (the locked decoupling boundary, extended for #65)
+  # — PutObject on results, GetObject on user uploads.
   WorkerTaskRole:
     Type: AWS::IAM::Role
     Properties:
@@ -61,6 +70,15 @@ Resources:
                 Resource: !Sub
                   - '${BucketArn}/*'
                   - BucketArn: !ImportValue { 'Fn::Sub': '${ResultsBucketArnImport}' }
+        - PolicyName: uploads-get
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: s3:GetObject
+                Resource: !Sub
+                  - '${BucketArn}/uploads/*'
+                  - BucketArn: !ImportValue { 'Fn::Sub': '${UploadsBucketArnImport}' }
 
   # Execution role: pull the image from ECR + write task logs.
   BatchExecutionRole:
@@ -150,6 +168,8 @@ Resources:
             Value: !Ref AWS::Region
           - Name: SANJI_RESULTS_BUCKET
             Value: !ImportValue { 'Fn::Sub': '${ResultsBucketNameImport}' }
+          - Name: SANJI_UPLOADS_BUCKET
+            Value: !ImportValue { 'Fn::Sub': '${UploadsBucketNameImport}' }
         LogConfiguration:
           LogDriver: awslogs
 
