@@ -20,13 +20,13 @@ import json
 from typing import Any, cast
 from urllib.parse import unquote_plus
 
-import boto3
 import structlog
 from pynamodb.exceptions import UpdateError
 
 from sandjig.functions import get_timestamp_now
 from sandjig.jobsapi.dynamodb.models import ItemDoesNotExistError, ProcessingJobModel
 
+from sanji.aws import get_s3_client
 from sanji.service.jobs import STATUS_COMPLETED, STATUS_ERROR, SanjiJobResult
 
 logger = structlog.get_logger().bind(logger=__name__)
@@ -92,7 +92,7 @@ def _record_terminal_status(
 
 
 def _read_result(bucket: str, key: str, *, s3_client: Any = None) -> SanjiJobResult:
-    s3 = s3_client or boto3.client("s3")
+    s3 = s3_client or get_s3_client()
     body = s3.get_object(Bucket=bucket, Key=key)["Body"].read()
     return SanjiJobResult.model_validate_json(body)
 

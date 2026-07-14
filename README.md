@@ -173,7 +173,15 @@ Then edit the copy and replace the placeholder values for your AWS environment:
 | `environment_variables.STRIPE_PUBLISHABLE_KEY` | Stripe publishable key (safe for client-side use) |
 | `environment_variables.SANJI_STRIPE_PRICE_PRO` | Stripe Price ID for the Pro plan (Dashboard → Products) — checkout 422s without it |
 | `environment_variables.SANJI_STRIPE_PRICE_BUSINESS` | Stripe Price ID for the Business plan |
+| `environment_variables.SANJI_RESULTS_BUCKET` | S3 bucket the worker writes results to; the API presigns download URLs from it |
+| `environment_variables.SANJI_UPLOADS_BUCKET` | S3 bucket for direct user uploads (#65); falls back to `SANJI_RESULTS_BUCKET` when unset. Also required on the Batch job definition so the worker can fetch uploaded sources |
 | `log_level` | Zappa handler log level — `WARNING` keeps the full API Gateway event payload out of the logs (see #16) |
+
+Optional upload tuning (defaults in `sanji/settings.py`): `SANJI_UPLOAD_MAX_BYTES`
+(upload size cap, default 20 GiB), `SANJI_UPLOAD_PART_BYTES` (multipart part size,
+default 100 MiB), `SANJI_UPLOAD_MULTIPART_THRESHOLD_BYTES` (single-PUT/multipart
+cutover, default 100 MiB), `SANJI_UPLOAD_PRESIGN_EXPIRY_SECONDS` (presigned upload
+URL TTL, default 3600).
 
 ### Deploy
 

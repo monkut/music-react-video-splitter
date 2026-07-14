@@ -61,6 +61,24 @@ RESULT_MARKER_NAME = os.environ.get("SANJI_RESULT_MARKER_NAME", "result.json")
 # Presigned result URL TTL (seconds)
 PRESIGN_EXPIRY_SECONDS = int(os.environ.get("SANJI_PRESIGN_EXPIRY_SECONDS", "3600"))
 
+# Direct upload (issue #65) — S3 layout, presign TTL, and size limits
+UPLOADS_ROOT = "uploads"
+UPLOAD_PRESIGN_EXPIRY_SECONDS = int(
+    os.environ.get("SANJI_UPLOAD_PRESIGN_EXPIRY_SECONDS", "3600")
+)
+# Multi-hour 1080p streams run 10-15 GB; cap uploads at 20 GiB by default.
+UPLOAD_MAX_BYTES = int(os.environ.get("SANJI_UPLOAD_MAX_BYTES", str(20 * 1024**3)))
+UPLOAD_PART_BYTES = int(os.environ.get("SANJI_UPLOAD_PART_BYTES", str(100 * 1024**2)))
+UPLOAD_MULTIPART_THRESHOLD_BYTES = int(
+    os.environ.get("SANJI_UPLOAD_MULTIPART_THRESHOLD_BYTES", str(100 * 1024**2))
+)
+
+
+def get_uploads_bucket() -> str | None:
+    """Uploads bucket; falls back to the results bucket for single-bucket deploys."""
+    return os.getenv("SANJI_UPLOADS_BUCKET") or os.getenv(RESULTS_BUCKET_ENV)
+
+
 # Stripe env var names (values loaded at runtime via validate_stripe_env_vars)
 STRIPE_SECRET_KEY_ENV = "STRIPE_SECRET_KEY"
 STRIPE_WEBHOOK_SECRET_ENV = "STRIPE_WEBHOOK_SECRET"

@@ -14,7 +14,6 @@ import os
 from datetime import UTC, datetime
 from typing import Any, cast
 
-import boto3
 import structlog
 from flask import Flask, Response, g, jsonify, request, session
 from pydantic import BaseModel
@@ -22,6 +21,7 @@ from werkzeug.exceptions import HTTPException
 
 from sandjig.jobsapi.dynamodb.models import ItemDoesNotExistError, ProcessingJobModel
 
+from sanji.aws import get_s3_client
 from sanji.service.auth import (
     SESSION_USER_ID,
     CurrentUser,
@@ -34,9 +34,10 @@ from sanji.service.billing import (
     handle_checkout,
     handle_stripe_webhook,
 )
-from sanji.service.jobs import SanjiJobRequest, SanjiJobResult
+from sanji.service.jobs import SanjiJobRequest, SanjiJobResult, is_user_upload_key
 from sanji.service.logging_config import configure_logging
 from sanji.service.plans import DEFAULT_PLAN_CODE, PLANS, get_plan
+from sanji.service.uploads import handle_complete_upload, handle_create_upload
 from sanji.service.usage import UsageStore
 from sanji.service.users import UserStore
 from sanji.settings import (
@@ -81,7 +82,7 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> Flask:
     user_store = UserStore()
     usage_store = UsageStore()
     billing_service = BillingService(user_store=user_store)
-    s3_client = boto3.client("s3")
+    s3_client = get_s3_client()
 
     def authorize_job_request(payload: dict) -> tuple[Any, int] | None:
         """sandjig JOBREQUEST_AUTHORIZATION_FUNCTION for ``POST /jobs`` (#30, #43).
@@ -137,6 +138,19 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> Flask:
                 ),
                 402,
             )
+
+        source_s3_key = payload.get("source_s3_key")
+        if source_s3_key and not is_user_upload_key(source_s3_key, user_id):
+            logger.info(
+                "job_source_key_ownership_denied",
+                user_id=user_id,
+                source_s3_key=source_s3_key,
+            )
+            return jsonify(
+                error="forbidden",
+                message="source_s3_key is not under the authenticated user's"
+                " uploads prefix.",
+            ), 403
 
         g.job_request_user_id = user_id
         g.job_request_plan = plan
@@ -269,6 +283,16 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> Flask:
             else None,
         }
         return body, 200
+
+    @app.post("/uploads")
+    @login_required
+    def create_upload(current_user: CurrentUser):
+        return handle_create_upload(request, current_user.user_id, s3_client)
+
+    @app.post("/uploads/complete")
+    @login_required
+    def complete_upload(current_user: CurrentUser):
+        return handle_complete_upload(request, current_user.user_id, s3_client)
 
     @app.get("/auth/google")
     def google_login():
