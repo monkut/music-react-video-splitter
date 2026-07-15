@@ -126,6 +126,53 @@ class TestRunPipeline:
         assert result.manifest_path == out / "reaction_MANIFEST.csv"
         assert result.segment_files == [segment]
 
+    @mock.patch("sanji.pipeline.refine_splits_with_transcription")
+    @mock.patch("sanji.pipeline.find_split_points")
+    @mock.patch("sanji.pipeline.merge_short_regions")
+    @mock.patch("sanji.pipeline.find_song_regions")
+    @mock.patch("sanji.pipeline.compute_music_density")
+    @mock.patch("sanji.pipeline.classify_audio")
+    @mock.patch("sanji.pipeline.extract_audio")
+    @mock.patch("sanji.pipeline.get_video_duration")
+    def test_local_file_creates_missing_work_dir(
+        self,
+        mock_duration,
+        mock_extract,
+        mock_classify,
+        mock_density,
+        mock_regions,
+        mock_merge,
+        mock_splits,
+        mock_refine,
+        tmp_path,
+    ):
+        """A non-existent work_dir must exist before ffmpeg writes audio.wav (#73).
+
+        The worker passes work_dir=<scratch>/work without creating it; only the
+        URL path created it implicitly, so direct-upload (local file) jobs failed
+        at extract_audio with ffmpeg exit 1.
+        """
+        video = tmp_path / "source.mp4"
+        video.write_bytes(b"x")
+        work_dir = tmp_path / "job" / "work"  # deliberately not created
+
+        mock_duration.return_value = 600.0
+        mock_classify.return_value = []
+        mock_density.return_value = ([], [])
+        mock_regions.return_value = []
+        mock_merge.return_value = []
+        mock_splits.return_value = []
+        mock_refine.return_value = []
+
+        params = PipelineParams(
+            input=str(video), output_dir=tmp_path / "out", dry_run=True
+        )
+        run_pipeline(params, work_dir=work_dir)
+
+        assert work_dir.is_dir()
+        (audio_path,) = mock_extract.call_args.args[1:]
+        assert audio_path.parent == work_dir
+
     @mock.patch("sanji.pipeline.get_video_duration")
     def test_duration_cap_raises_before_processing(self, mock_duration, tmp_path):
         """Enforcement B: DurationExceededError raised before expensive steps."""
