@@ -210,7 +210,11 @@ def run_pipeline(
             f"Video duration {total_duration:.0f}s exceeds plan cap of {params.max_duration_seconds}s"
         )
 
-    audio_path = (work_dir or output_dir) / "audio.wav"
+    # The local-file path leaves work_dir untouched (only the URL path creates
+    # it), so ensure it exists before ffmpeg writes audio.wav into it (#73).
+    audio_dir = work_dir or output_dir
+    audio_dir.mkdir(parents=True, exist_ok=True)
+    audio_path = audio_dir / "audio.wav"
     extract_audio(video_path, audio_path)
     segments = classify_audio(audio_path)
 
