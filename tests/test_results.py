@@ -105,7 +105,7 @@ def test_result_event_error_marker_sets_error_status(aws):
 
     job = ProcessingJobModel.get_processingjobmodel_item(JOB_ID, as_dict=False)
     assert job.status == STATUS_ERROR
-    assert job.errors == {"message": "download failed"}
+    assert job.errors == ["download failed"]
 
 
 def test_result_event_missing_job_is_noop(aws):
