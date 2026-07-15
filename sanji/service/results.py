@@ -69,7 +69,9 @@ def _record_terminal_status(
     if response_payload is not None:
         actions.append(ProcessingJobModel.response_payload.set(response_payload))
     if error is not None:
-        actions.append(ProcessingJobModel.errors.set({"message": error}))
+        # list[str] — the shape sandjig's JobResponse declares for ``errors``;
+        # a dict here 500s GET /jobs/<id> at response validation (#74).
+        actions.append(ProcessingJobModel.errors.set([error]))
 
     try:
         job.update(

@@ -126,6 +126,32 @@ def test_job_submit_and_poll(authed_client):
     assert poll.json["job_id"] == job_id
 
 
+def test_job_status_readable_after_error(authed_client):
+    """GET /jobs/<id> must stay readable once a job is terminal-error (#74).
+
+    sanji wrote ``errors`` as a dict while sandjig's JobResponse declares
+    ``list[str] | None`` — the response validation 500'd exactly when the
+    client needed the error detail.
+    """
+    from sanji.service.jobs import STATUS_ERROR
+    from sanji.service.results import _record_terminal_status
+
+    client, _user = authed_client
+    response = client.post(
+        "/jobs",
+        json={"input_url": "https://www.youtube.com/watch?v=TESTVIDEO01"},
+    )
+    assert response.status_code == 201, response.data
+    job_id = response.json["job_id"]
+
+    _record_terminal_status(job_id, STATUS_ERROR, error="ffmpeg exited 1")
+
+    poll = client.get(f"/jobs/{job_id}")
+    assert poll.status_code == 200, poll.data
+    assert poll.json["status"] == STATUS_ERROR
+    assert poll.json["errors"] == ["ffmpeg exited 1"]
+
+
 def test_job_submit_rejects_missing_input_url(authed_client):
     client, _user = authed_client
     response = client.post("/jobs", json={"params": {}})
