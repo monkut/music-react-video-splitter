@@ -34,6 +34,7 @@ from sanji.service.billing import (
     handle_checkout,
     handle_stripe_webhook,
 )
+from sanji.service.cors import CorsCredentialsMiddleware
 from sanji.service.jobs import SanjiJobRequest, SanjiJobResult, is_user_upload_key
 from sanji.service.logging_config import configure_logging
 from sanji.service.plans import DEFAULT_PLAN_CODE, PLANS, get_plan
@@ -43,6 +44,7 @@ from sanji.service.users import UserStore
 from sanji.settings import (
     PRESIGN_EXPIRY_SECONDS,
     RESULTS_BUCKET_ENV,
+    get_cors_allowed_origins,
     validate_secret_key_env_var,
     validate_stripe_env_vars,
 )
@@ -191,6 +193,12 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> Flask:
     app.config["SESSION_COOKIE_SECURE"] = is_production
     app.config["SESSION_COOKIE_HTTPONLY"] = True
     app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+
+    # Credentialed CORS (#81): sandjig's after_request sets `Allow-Origin: *`
+    # and runs last, which browsers reject for cookie-authenticated requests.
+    # This WSGI wrapper runs after the whole Flask cycle, so it has the final say
+    # on the CORS headers — echoing an allow-listed origin + credentials.
+    app.wsgi_app = CorsCredentialsMiddleware(app.wsgi_app, get_cors_allowed_origins())
 
     @app.after_request
     def handle_usage_increment(response: Response) -> Response:

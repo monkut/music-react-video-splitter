@@ -26,7 +26,8 @@
             "SANJI_SUBSCRIPTIONS_TABLE": "sanji-subscriptions-dev",
             "SANJI_WEBHOOK_EVENTS_TABLE": "sanji-webhook-events-dev",
             "SANJI_RESULTS_BUCKET": "<SANJI_RESULTS_BUCKET>",
-            "SANJI_UPLOADS_BUCKET": "<SANJI_UPLOADS_BUCKET>"
+            "SANJI_UPLOADS_BUCKET": "<SANJI_UPLOADS_BUCKET>",
+            "SANJI_CORS_ALLOWED_ORIGINS": "https://kanpaiko.weyuco.com"
         },
         "exclude": [
             ".git",
