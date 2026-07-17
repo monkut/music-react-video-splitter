@@ -140,6 +140,10 @@ class BillingService:
         self._subscriptions = subscription_store or SubscriptionStore()
         self._processed_events = processed_event_store or ProcessedEventStore()
 
+    def get_subscription(self, user_id: str) -> SubscriptionRecord | None:
+        """Return the user's webhook-synced subscription, or None if they have none (#83)."""
+        return self._subscriptions.get(user_id)
+
     def create_checkout_session(self, user: CurrentUser, price_id: str) -> str:
         """Create a fresh Checkout Session (no idempotency key: a static key made
         Stripe return the same — possibly expired or completed — session for 24h

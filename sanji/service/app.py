@@ -239,6 +239,37 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> Flask:
     def me(current_user: CurrentUser) -> tuple[dict, int]:
         return current_user.model_dump(), 200
 
+    @app.get("/me/usage")
+    @login_required
+    def me_usage(current_user: CurrentUser) -> tuple[dict, int]:
+        """Current-period stream usage + plan limit + live subscription status (#83).
+
+        The count and limit come from the same UsageStore + plan the ``POST /jobs``
+        cap check uses (``authorize_job_request``), so the client sees exactly what
+        the server enforces. ``subscription`` is null for users who never
+        subscribed (e.g. free tier).
+        """
+        period_key = datetime.now(UTC).strftime("%Y-%m")
+        stream_count = usage_store.get_monthly_count(current_user.user_id, period_key)
+        plan = get_plan(current_user.current_plan_code) or PLANS[0]
+        subscription = billing_service.get_subscription(current_user.user_id)
+        body = {
+            "period": period_key,
+            "plan_code": plan.code,
+            "usage": {
+                "stream_count": stream_count,
+                "stream_limit": plan.monthly_stream_limit,
+            },
+            "subscription": {
+                "status": subscription.status,
+                "plan_code": subscription.plan_code,
+                "current_period_end": subscription.current_period_end,
+            }
+            if subscription
+            else None,
+        }
+        return body, 200
+
     @app.get("/jobs/<job_id>/result")
     @login_required
     def job_result(job_id: str, current_user: CurrentUser) -> tuple[dict, int]:
