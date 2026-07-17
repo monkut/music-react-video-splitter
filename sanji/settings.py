@@ -2,6 +2,19 @@
 
 import os
 
+# Credentialed CORS allowlist (#81): comma-separated browser origins permitted to
+# make cookie-authenticated cross-origin calls (e.g.
+# "https://kanpaiko.weyuco.com,http://localhost:5173"). Empty/unset denies all
+# cross-origin browser access.
+CORS_ALLOWED_ORIGINS_ENV = "SANJI_CORS_ALLOWED_ORIGINS"
+
+
+def get_cors_allowed_origins() -> frozenset[str]:
+    """Parse the credentialed-CORS origin allowlist from the environment (#81)."""
+    raw = os.getenv(CORS_ALLOWED_ORIGINS_ENV, "")
+    return frozenset(origin.strip() for origin in raw.split(",") if origin.strip())
+
+
 SPEECH_LABELS = {"male", "female", "speech"}
 MUSIC_LABELS = {"music"}
 
