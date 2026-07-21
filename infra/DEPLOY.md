@@ -9,6 +9,10 @@ this file is the one place that sequences them. Addresses #77 and #11.
 > capture evidence, then **torn down** (see [Teardown](#teardown)). Do not leave the
 > stack running.
 
+> **Validated end-to-end on 2026-07-21** against dev `610714125210`/us-west-2: all five
+> deploy steps, the manual Batch-FAILED wiring, the smoke test (9/9), and the full
+> teardown were executed from this document. Commands below are the ones that actually ran.
+
 ## Topology
 
 Three planes, three tools, deployed in dependency order:
@@ -60,16 +64,32 @@ Zappa env (`PROCESSINGJOB_REQUEST_QUEUE_URL`) and the compute stack default
 (`JobsQueueName`). This is the single source of truth for that name; changing it means
 changing all three.
 
+The template is a static file in the sandjig checkout (`sandjig template --resources-only`
+just copies it), so deploy it directly. The queue name is built as
+`${Prefix}-sdjobs-${UniqueSuffix}-${APIGatewayStage}` — the parameters below are what
+produce `sanji-sdjobs-eph-dev`:
+
 ```bash
-sandjig template --resources-only -o /tmp/sandjig-resources.sam.yaml   # run with sanji's suffix=eph / stage=dev config
 aws cloudformation deploy \
-  --template-file /tmp/sandjig-resources.sam.yaml \
+  --template-file ~/projects/sandjig/sandjig/cloudformation/resources.sam.yaml \
   --stack-name sandjig-resources-dev \
-  --capabilities CAPABILITY_IAM
+  --region us-west-2 \
+  --capabilities CAPABILITY_IAM \
+  --parameter-overrides Prefix=sanji UniqueSuffix=eph APIGatewayStage=dev \
+    DynamodbRequestsTableName=sanji-jobs-requests-dev \
+    DynamodbSettingsTableName=sanji-jobs-settings-dev \
+    DyanmodbSortIndexName=sanji-jobs-sortindex-dev
 ```
 
-See the [sandjig README → Deploy](https://github.com/monkut/sandjig#deploy) for the
-exact `-s`/`-n` flags that produce the `sanji-sdjobs-eph-dev` name.
+> `DyanmodbSortIndexName` is spelled exactly that way in the template (typo upstream) —
+> passing `Dynamodb...` fails with "invalid parameter key".
+
+Verify the queue name matches the Zappa env before continuing:
+
+```bash
+aws sqs get-queue-url --queue-name sanji-sdjobs-eph-dev --region us-west-2 --query QueueUrl --output text
+# must equal .dev.environment_variables.PROCESSINGJOB_REQUEST_QUEUE_URL in zappa_settings.json
+```
 
 ### 2. sanji SaaS resources (`sanji-resources-dev`)
 
@@ -130,6 +150,24 @@ including `SANJI_USERS_TABLE` and `SANJI_USAGE_TABLE`. If absent, the code falls
 stage-less defaults (`sanji-users`, `sanji-usage`) that do not exist, and **every
 authenticated request 401s** (#77). The tracked example now includes them.
 
+### `SANJI_CORS_ALLOWED_ORIGINS` is stage-dependent
+
+`get_cors_allowed_origins()` (`sanji/settings.py`) defaults to an **empty allowlist** when
+the variable is unset — the API then rejects *every* browser origin, and the SPA cannot
+call it at all. It must be set explicitly per stage:
+
+| Stage | Value |
+|-------|-------|
+| dev (local SPA against a deployed API) | `http://localhost:5173` |
+| prod | `https://kanpaiko.weyuco.com` (the #7 CloudFront domain) |
+
+Comma-separate to allow more than one. The smoke test's CORS checks verify both that the
+allow-listed origin is echoed with `Access-Control-Allow-Credentials: true` and that an
+unknown origin is not.
+
+> Packaging note: `uv sync --extra api --no-dev` keeps the upload around **44 MB** —
+> well inside Lambda's 250 MB unzipped limit (verified on the 2026-07-21 dev deploy).
+
 ### 6. Wire the Batch-FAILED safety net (manual)
 
 Zappa 0.62 has no `event_pattern` support (it crashes with `UnboundLocalError: rule_name`),
@@ -169,19 +207,46 @@ Reverse order. Several steps are **not** handled by CloudFormation and will bloc
 naive `delete-stack`:
 
 ```bash
-uv run zappa undeploy dev --remove-logs        # 1. FIRST — removes the results-bucket S3 notification; deleting the bucket before this conflicts
-aws cloudformation delete-stack --stack-name sanji-compute-dev   # 2. compute before resources (it imports the resources exports)
-aws cloudformation wait stack-delete-complete --stack-name sanji-compute-dev
+# 1. FIRST — detaches the results-bucket S3 notification (and the batch-failed target);
+#    deleting the bucket/stack before this conflicts. -y skips the confirmation prompt.
+uv run zappa undeploy dev --remove-logs -y
+
+# 2. Compute before resources (it Fn::ImportValues the resources exports).
+aws cloudformation delete-stack --stack-name sanji-compute-dev --region us-west-2
+aws cloudformation wait stack-delete-complete --stack-name sanji-compute-dev --region us-west-2
 
 # 3. Empty the S3 buckets — CloudFormation refuses to delete a non-empty bucket.
-for B in $(aws cloudformation describe-stacks --stack-name sanji-resources-dev --query "Stacks[0].Outputs[?ends_with(OutputKey,'BucketName')].OutputValue" --output text); do
+for B in sanji-results-dev-$(aws sts get-caller-identity --query Account --output text) \
+         sanji-uploads-dev-$(aws sts get-caller-identity --query Account --output text); do
   aws s3 rm "s3://$B" --recursive
 done
-aws cloudformation delete-stack --stack-name sanji-resources-dev   # 4.
-aws cloudformation delete-stack --stack-name sandjig-resources-dev # 5.
+
+# 4/5. Resources stacks.
+aws cloudformation delete-stack --stack-name sanji-resources-dev --region us-west-2
+aws cloudformation wait stack-delete-complete --stack-name sanji-resources-dev --region us-west-2
+aws cloudformation delete-stack --stack-name sandjig-resources-dev --region us-west-2
+aws cloudformation wait stack-delete-complete --stack-name sandjig-resources-dev --region us-west-2
 
 # 6. ECR repo is created out-of-band by build_and_push.sh — CFN never deletes it, and a non-empty repo blocks deletion:
-aws ecr delete-repository --repository-name sanji-worker --force
+aws ecr delete-repository --repository-name sanji-worker --region us-west-2 --force
+
+# 7. Zappa's deployment-artifact bucket (`s3_bucket` in zappa_settings.json). Zappa
+#    CREATES this on first deploy but never removes it on undeploy — it survives an
+#    otherwise-complete teardown and is easy to miss.
+aws s3 rm "s3://sanji-api-zappa-<acct>-usw2" --recursive
+aws s3api delete-bucket --bucket "sanji-api-zappa-<acct>-usw2" --region us-west-2
+```
+
+Confirm nothing survived:
+
+```bash
+aws cloudformation list-stacks --region us-west-2 --stack-status-filter CREATE_COMPLETE UPDATE_COMPLETE DELETE_FAILED \
+  --query "StackSummaries[?starts_with(StackName,'sanji')||starts_with(StackName,'sandjig')].[StackName,StackStatus]" --output text
+aws ecr describe-repositories --region us-west-2 --query 'repositories[].repositoryName' --output text
+aws s3api list-buckets --query "Buckets[?starts_with(Name,'sanji')].Name" --output text
+aws dynamodb list-tables --region us-west-2 --query "TableNames[?starts_with(@,'sanji')]" --output text
+aws batch describe-job-queues --region us-west-2 --query 'jobQueues[].jobQueueName' --output text
+aws pipes list-pipes --region us-west-2 --query 'Pipes[].Name' --output text
 ```
 
 ### Teardown gotchas
@@ -191,3 +256,4 @@ aws ecr delete-repository --repository-name sanji-worker --force
 - **Compute before resources** — `sanji-compute-dev` `Fn::ImportValue`s the resources-stack exports; CloudFormation refuses to delete an exporting stack while an importer exists.
 - **ECR is out-of-band** — the `sanji-worker` repo is created by the build script, not any stack; delete it manually with `--force`.
 - **No `DeletionPolicy: Retain`** — deleting the resources stack **destroys** the DynamoDB tables and their data. That is intended for ephemeral dev, but be deliberate before running this against anything you care about.
+- **Zappa's deploy bucket outlives the teardown** — `zappa undeploy` removes the Lambda, log group, S3 notification and event targets, but **not** the `s3_bucket` it created for deployment artifacts. Step 7 above exists because a full stack teardown otherwise leaves that bucket behind (found during the 2026-07-21 validation run).

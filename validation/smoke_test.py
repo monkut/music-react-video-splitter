@@ -49,6 +49,14 @@ REQUEST_TIMEOUT_SECONDS = 15
 TLS_EXPIRY_WARNING_DAYS = 30
 DEFAULT_DISALLOWED_ORIGIN = "https://evil.example.com"
 
+# POST /jobs validates its request body BEFORE the authorization hook runs, so an
+# empty body returns 422 and never reaches the auth boundary. Send a schema-valid
+# request so the check actually exercises the 401. The body must satisfy "exactly
+# one of input_url or source_s3_key" AND the input_url format check — a generic
+# https URL is rejected with 422, so use a YouTube-shaped URL. Nothing is enqueued:
+# the request is rejected at the auth boundary before any job is created.
+AUTH_PROBE_JOB_BODY = {"input_url": "https://www.youtube.com/watch?v=smoketest"}
+
 
 def _opener():
     return build_opener()
@@ -61,9 +69,16 @@ def _record(results: list, label: str, passed: bool, detail: str = "") -> None:
     results.append((label, passed, detail))
 
 
-def _get(url: str, method: str = "GET", headers: dict | None = None):
+def _get(
+    url: str, method: str = "GET", headers: dict | None = None, data: dict | None = None
+):
     """Return (status, headers, body) surfacing HTTPError as a normal response."""
-    req = Request(url, method=method, headers=headers or {})
+    req_headers = dict(headers or {})
+    payload = None
+    if data is not None:
+        payload = json.dumps(data).encode()
+        req_headers.setdefault("Content-Type", "application/json")
+    req = Request(url, method=method, headers=req_headers, data=payload)
     try:
         resp = _opener().open(req, timeout=REQUEST_TIMEOUT_SECONDS)
         return resp.status, resp.headers, resp.read()
@@ -180,10 +195,15 @@ def check_cors_rejects_origin(results: list, base: str, disallowed: str) -> None
     _record(results, "CORS rejects disallowed origin", rejected, detail)
 
 
-def check_auth_required(results: list, base: str, method: str, path: str) -> None:
-    status, _, _ = _get(base + path, method=method)
+def check_auth_required(
+    results: list, base: str, method: str, path: str, data: dict | None = None
+) -> None:
+    status, _, _ = _get(base + path, method=method, data=data)
     passed = status == 401
-    _record(results, f"{method} {path} anonymous -> 401 (not 500)", passed, f"status={status}")
+    detail = f"status={status}"
+    if status == 422:
+        detail += " — body rejected by validation before the auth hook; probe body needs updating"
+    _record(results, f"{method} {path} anonymous -> 401 (not 500)", passed, detail)
 
 
 def main() -> int:
@@ -227,7 +247,7 @@ def main() -> int:
 
     print("\n--- Auth boundary ---")
     check_auth_required(results, base, "GET", "/me")
-    check_auth_required(results, base, "POST", "/jobs")
+    check_auth_required(results, base, "POST", "/jobs", data=AUTH_PROBE_JOB_BODY)
 
     passed = sum(1 for _, ok, _ in results if ok)
     failed = len(results) - passed
