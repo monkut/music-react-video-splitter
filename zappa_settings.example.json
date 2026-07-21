@@ -23,8 +23,10 @@
             "STRIPE_PUBLISHABLE_KEY": "pk_test_<YOUR_STRIPE_PUBLISHABLE_KEY>",
             "SANJI_STRIPE_PRICE_PRO": "price_<YOUR_PRO_PRICE_ID>",
             "SANJI_STRIPE_PRICE_BUSINESS": "price_<YOUR_BUSINESS_PRICE_ID>",
+            "SANJI_USERS_TABLE": "sanji-users-dev",
             "SANJI_SUBSCRIPTIONS_TABLE": "sanji-subscriptions-dev",
             "SANJI_WEBHOOK_EVENTS_TABLE": "sanji-webhook-events-dev",
+            "SANJI_USAGE_TABLE": "sanji-usage-dev",
             "SANJI_RESULTS_BUCKET": "<SANJI_RESULTS_BUCKET>",
             "SANJI_UPLOADS_BUCKET": "<SANJI_UPLOADS_BUCKET>",
             "SANJI_CORS_ALLOWED_ORIGINS": "https://kanpaiko.weyuco.com"
@@ -43,6 +45,16 @@
             "data/bench",
             "*.mp4",
             "*.wav"
+        ],
+        "events": [
+            {
+                "function": "sanji.service.results.handle_result_event",
+                "event_source": {
+                    "arn": "arn:aws:s3:::<SANJI_RESULTS_BUCKET>",
+                    "events": ["s3:ObjectCreated:*"],
+                    "key_filters": [{"type": "suffix", "value": "result.json"}]
+                }
+            }
         ]
     }
 }
