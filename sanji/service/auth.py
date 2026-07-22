@@ -7,7 +7,10 @@ Authorization code flow:
   GET /auth/logout          → clear session
 """
 
+import base64
+import hashlib
 import os
+import secrets
 from functools import wraps
 from typing import Any, Callable
 
@@ -18,6 +21,7 @@ from google_auth_oauthlib.flow import Flow
 from pydantic import BaseModel
 
 from sanji.service.users import UserStore
+from sanji.settings import get_frontend_url
 
 # ---------------------------------------------------------------------------
 # Config constants (resolved from env at call time, not module import time)
@@ -28,10 +32,10 @@ OAUTH_REDIRECT_URI_ENV = "OAUTH_REDIRECT_URI"
 
 OAUTH_SCOPES = ["openid", "email", "profile"]
 
-# Flask session key used to store the authenticated user_id.
+# Flask session keys.
 SESSION_USER_ID = "user_id"
-# Flask session key used for CSRF state verification.
 SESSION_OAUTH_STATE = "oauth_state"
+SESSION_CODE_VERIFIER = "code_verifier"
 
 
 # ---------------------------------------------------------------------------
@@ -100,15 +104,30 @@ def get_current_user() -> CurrentUser:
     )
 
 
+def _generate_pkce_pair() -> tuple[str, str]:
+    """Return (code_verifier, code_challenge) for PKCE S256."""
+    verifier = secrets.token_urlsafe(64)
+    challenge = (
+        base64.urlsafe_b64encode(hashlib.sha256(verifier.encode("ascii")).digest())
+        .rstrip(b"=")
+        .decode("ascii")
+    )
+    return verifier, challenge
+
+
 def handle_google_login():
     """Redirect the browser to the Google OAuth consent screen."""
     flow = _build_oauth_flow()
+    code_verifier, code_challenge = _generate_pkce_pair()
     authorization_url, state = flow.authorization_url(
         access_type="offline",
         include_granted_scopes="true",
         prompt="select_account",
+        code_challenge=code_challenge,
+        code_challenge_method="S256",
     )
     session[SESSION_OAUTH_STATE] = state
+    session[SESSION_CODE_VERIFIER] = code_verifier
     return redirect(authorization_url)
 
 
@@ -120,8 +139,9 @@ def handle_google_callback(req: Any):
     if not stored_state or stored_state != returned_state:
         abort(400, description="OAuth state mismatch — possible CSRF.")
 
+    code_verifier: str | None = session.pop(SESSION_CODE_VERIFIER, None)
     flow = _build_oauth_flow()
-    flow.fetch_token(authorization_response=req.url)
+    flow.fetch_token(authorization_response=req.url, code_verifier=code_verifier)
 
     # Verify id_token against Google's public keys.
     credentials = flow.credentials
@@ -148,7 +168,7 @@ def handle_google_callback(req: Any):
         )
 
     session[SESSION_USER_ID] = user.user_id
-    return redirect("/")
+    return redirect(get_frontend_url())
 
 
 # ---------------------------------------------------------------------------

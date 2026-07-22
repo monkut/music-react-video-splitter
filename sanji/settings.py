@@ -103,6 +103,15 @@ _REQUIRED_STRIPE_VARS = (
     STRIPE_PUBLISHABLE_KEY_ENV,
 )
 
+# Frontend URL — used to redirect back to the SPA after OAuth callback
+FRONTEND_URL_ENV = "SANJI_FRONTEND_URL"
+DEFAULT_FRONTEND_URL = "http://localhost:5173"
+
+
+def get_frontend_url() -> str:
+    return os.getenv(FRONTEND_URL_ENV, DEFAULT_FRONTEND_URL)
+
+
 # Flask session-signing key env var name (value loaded at runtime in create_app)
 SECRET_KEY_ENV = "SECRET_KEY"
 

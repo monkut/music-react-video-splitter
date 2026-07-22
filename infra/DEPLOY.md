@@ -177,12 +177,15 @@ The API's `/auth/google` login flow requires three env vars in `zappa_settings.j
 ```json
 "GOOGLE_CLIENT_ID": "<copied client id>",
 "GOOGLE_CLIENT_SECRET": "<copied client secret>",
-"OAUTH_REDIRECT_URI": "https://dev.kanpaiko.weyuco.com/auth/google/callback"
+"OAUTH_REDIRECT_URI": "https://dev.kanpaiko.weyuco.com/auth/google/callback",
+"OAUTHLIB_RELAX_TOKEN_SCOPE": "1"
 ```
 
 Then redeploy: `uv run zappa update dev`
 
 **Important:** `OAUTH_REDIRECT_URI` must exactly match one of the URIs registered in Google Cloud Console — even a trailing slash difference causes a redirect_uri_mismatch error.
+
+**Important:** `OAUTHLIB_RELAX_TOKEN_SCOPE=1` is required. Google returns scopes as full URIs (e.g. `https://www.googleapis.com/auth/userinfo.email`) while the flow is configured with short names (`email`). Without this flag, `requests_oauthlib` raises a `Warning` that Flask converts to a 500 `internal_server_error` even after a successful login.
 
 **Step 3 — For the deployed frontend at `kanpaiko.weyuco.com`**
 
