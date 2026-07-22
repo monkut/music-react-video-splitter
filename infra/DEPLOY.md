@@ -150,6 +150,38 @@ including `SANJI_USERS_TABLE` and `SANJI_USAGE_TABLE`. If absent, the code falls
 stage-less defaults (`sanji-users`, `sanji-usage`) that do not exist, and **every
 authenticated request 401s** (#77). The tracked example now includes them.
 
+### Google OAuth — required before first login
+
+The API's `/auth/google` login flow requires three env vars in `zappa_settings.json`. Without them, the backend redirects to Google with no `client_id` and Google returns **Error 400: missing required parameter: client_id**.
+
+**Step 1 — Create a Google Cloud OAuth 2.0 Client**
+
+1. Open [Google Cloud Console](https://console.cloud.google.com/) → APIs & Services → Credentials
+2. Click **Create Credentials → OAuth 2.0 Client ID**
+3. Application type: **Web application**
+4. Under **Authorized redirect URIs**, add:
+   - `http://localhost:5000/auth/google/callback` (local dev)
+   - `https://<API_GATEWAY_INVOKE_ID>.execute-api.us-west-2.amazonaws.com/dev/auth/google/callback` (Lambda dev — get the URL from `zappa status dev`)
+5. Click **Create**. Copy the **Client ID** (ends in `.apps.googleusercontent.com`) and **Client Secret**.
+
+> If the Google Cloud project has not yet had the **Google People API** (or **Google+ API**) enabled, enable it under APIs & Services → Library.
+
+**Step 2 — Add env vars to `zappa_settings.json`**
+
+```json
+"GOOGLE_CLIENT_ID": "<copied client id>",
+"GOOGLE_CLIENT_SECRET": "<copied client secret>",
+"OAUTH_REDIRECT_URI": "https://<api-gw-invoke-id>.execute-api.us-west-2.amazonaws.com/dev/auth/google/callback"
+```
+
+Then redeploy: `uv run zappa update dev`
+
+**Important:** `OAUTH_REDIRECT_URI` must exactly match one of the URIs registered in Google Cloud Console — even a trailing slash difference causes a redirect_uri_mismatch error.
+
+**Step 3 — For the deployed frontend at `kanpaiko.weyuco.com`**
+
+Also add `https://kanpaiko.weyuco.com` as an **Authorized JavaScript origin** (not a redirect URI — that stays as the API Gateway URL above) in the Google Cloud Console OAuth client. This allows the SPA to initiate the OAuth flow from the custom domain.
+
 ### `SANJI_CORS_ALLOWED_ORIGINS` is stage-dependent
 
 `get_cors_allowed_origins()` (`sanji/settings.py`) defaults to an **empty allowlist** when
