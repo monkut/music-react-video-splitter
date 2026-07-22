@@ -165,7 +165,7 @@ The API's `/auth/google` login flow requires three env vars in `zappa_settings.j
    - `http://localhost:5173`
 5. Under **Authorized redirect URIs**, add:
    - `http://localhost:5000/auth/google/callback` (local dev)
-   - `https://dev.kanpaiko.weyuco.com/auth/google/callback/` (dev deploy — custom domain for the sanji API)
+   - `https://dev.kanpaiko.weyuco.com/auth/google/callback` (dev deploy — custom domain for the sanji API)
 6. Click **Create**. Copy the **Client ID** (ends in `.apps.googleusercontent.com`) and **Client Secret**.
 
 > If the Google Cloud project has not yet had the **Google People API** (or **Google+ API**) enabled, enable it under APIs & Services → Library.
@@ -177,7 +177,7 @@ The API's `/auth/google` login flow requires three env vars in `zappa_settings.j
 ```json
 "GOOGLE_CLIENT_ID": "<copied client id>",
 "GOOGLE_CLIENT_SECRET": "<copied client secret>",
-"OAUTH_REDIRECT_URI": "https://dev.kanpaiko.weyuco.com/auth/google/callback/"
+"OAUTH_REDIRECT_URI": "https://dev.kanpaiko.weyuco.com/auth/google/callback"
 ```
 
 Then redeploy: `uv run zappa update dev`
