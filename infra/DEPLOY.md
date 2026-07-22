@@ -159,19 +159,25 @@ The API's `/auth/google` login flow requires three env vars in `zappa_settings.j
 1. Open [Google Cloud Console](https://console.cloud.google.com/) → APIs & Services → Credentials
 2. Click **Create Credentials → OAuth 2.0 Client ID**
 3. Application type: **Web application**
-4. Under **Authorized redirect URIs**, add:
+4. Under **Authorized JavaScript origins**, add:
+   - `https://kanpaiko.weyuco.com`
+   - `https://dev.kanpaiko.weyuco.com`
+   - `http://localhost:5173`
+5. Under **Authorized redirect URIs**, add:
    - `http://localhost:5000/auth/google/callback` (local dev)
-   - `https://<API_GATEWAY_INVOKE_ID>.execute-api.us-west-2.amazonaws.com/dev/auth/google/callback` (Lambda dev — get the URL from `zappa status dev`)
-5. Click **Create**. Copy the **Client ID** (ends in `.apps.googleusercontent.com`) and **Client Secret**.
+   - `https://dev.kanpaiko.weyuco.com/auth/google/callback/` (dev deploy — custom domain for the sanji API)
+6. Click **Create**. Copy the **Client ID** (ends in `.apps.googleusercontent.com`) and **Client Secret**.
 
 > If the Google Cloud project has not yet had the **Google People API** (or **Google+ API**) enabled, enable it under APIs & Services → Library.
+
+**Custom domain for the dev API**: `dev.kanpaiko.weyuco.com` is a Route 53 ALIAS pointing to the API Gateway EDGE CloudFront distribution. It routes all requests through to the `dev` stage of the sanji API. The API Gateway base path mapping is a root mapping (no prefix) so all paths are forwarded verbatim — `/auth/google/callback/` at the domain maps to `/auth/google/callback/` in the Flask app.
 
 **Step 2 — Add env vars to `zappa_settings.json`**
 
 ```json
 "GOOGLE_CLIENT_ID": "<copied client id>",
 "GOOGLE_CLIENT_SECRET": "<copied client secret>",
-"OAUTH_REDIRECT_URI": "https://<api-gw-invoke-id>.execute-api.us-west-2.amazonaws.com/dev/auth/google/callback"
+"OAUTH_REDIRECT_URI": "https://dev.kanpaiko.weyuco.com/auth/google/callback/"
 ```
 
 Then redeploy: `uv run zappa update dev`
@@ -180,7 +186,7 @@ Then redeploy: `uv run zappa update dev`
 
 **Step 3 — For the deployed frontend at `kanpaiko.weyuco.com`**
 
-Also add `https://kanpaiko.weyuco.com` as an **Authorized JavaScript origin** (not a redirect URI — that stays as the API Gateway URL above) in the Google Cloud Console OAuth client. This allows the SPA to initiate the OAuth flow from the custom domain.
+`https://kanpaiko.weyuco.com` and `https://dev.kanpaiko.weyuco.com` must be listed as **Authorized JavaScript origins** in the Google Cloud Console OAuth client (see step 1 above). This allows the SPA to initiate the OAuth flow from the custom domains.
 
 ### `SANJI_CORS_ALLOWED_ORIGINS` is stage-dependent
 
