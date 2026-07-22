@@ -21,6 +21,7 @@ from google_auth_oauthlib.flow import Flow
 from pydantic import BaseModel
 
 from sanji.service.users import UserStore
+from sanji.settings import get_frontend_url
 
 # ---------------------------------------------------------------------------
 # Config constants (resolved from env at call time, not module import time)
@@ -167,7 +168,7 @@ def handle_google_callback(req: Any):
         )
 
     session[SESSION_USER_ID] = user.user_id
-    return redirect("/")
+    return redirect(get_frontend_url())
 
 
 # ---------------------------------------------------------------------------
