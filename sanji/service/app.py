@@ -116,7 +116,37 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> Flask:
             logger.warning(
                 "unknown_plan_code", user_id=user_id, plan=user.current_plan_code
             )
-            plan = get_plan(DEFAULT_PLAN_CODE)
+            # PLANS[0] (free) as the concrete fallback: get_plan() is Optional, so
+            # falling back to it leaves `plan` unnarrowed and every downstream
+            # attribute access untyped.
+            plan = get_plan(DEFAULT_PLAN_CODE) or PLANS[0]
+
+        # Lifetime ceiling first (#91): a user who has hit both caps must be told
+        # the terminal, actionable thing (upgrade) — not to wait for a monthly
+        # reset that will never restore their quota.
+        if plan.total_stream_limit is not None:
+            total_count = usage_store.get_total_count(user_id)
+            if total_count >= plan.total_stream_limit:
+                logger.info(
+                    "free_tier_exhausted",
+                    user_id=user_id,
+                    plan=user.current_plan_code,
+                    count=total_count,
+                    limit=plan.total_stream_limit,
+                )
+                return (
+                    jsonify(
+                        error="free_tier_exhausted",
+                        message=(
+                            f"The {plan.name} plan's lifetime limit of"
+                            f" {plan.total_stream_limit} runs has been reached."
+                            " Upgrade to keep splitting videos."
+                        ),
+                        limit=plan.total_stream_limit,
+                        current_count=total_count,
+                    ),
+                    402,
+                )
 
         period_key = datetime.now(UTC).strftime("%Y-%m")
         current_count = usage_store.get_monthly_count(user_id, period_key)
@@ -202,7 +232,7 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> Flask:
 
     @app.after_request
     def handle_usage_increment(response: Response) -> Response:
-        """Count a successful job submission against the user's monthly cap (#32).
+        """Count a successful job submission against both caps (#32, #91).
 
         Runs only for ``POST /jobs`` 201 responses; failed submissions (401/402/
         422/5xx) do not consume quota. The increment uses the atomic DynamoDB
@@ -217,7 +247,13 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> Flask:
             if user_id:
                 try:
                     count = usage_store.increment_current_count(user_id)
-                    logger.info("usage_incremented", user_id=user_id, count=count)
+                    total_count = usage_store.increment_total_count(user_id)
+                    logger.info(
+                        "usage_incremented",
+                        user_id=user_id,
+                        count=count,
+                        total_count=total_count,
+                    )
                 except Exception as exc:
                     # the job is already enqueued — do not fail the response;
                     # an uncounted job under-bills, a failed response double-runs
@@ -251,6 +287,7 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> Flask:
         """
         period_key = datetime.now(UTC).strftime("%Y-%m")
         stream_count = usage_store.get_monthly_count(current_user.user_id, period_key)
+        total_count = usage_store.get_total_count(current_user.user_id)
         plan = get_plan(current_user.current_plan_code) or PLANS[0]
         subscription = billing_service.get_subscription(current_user.user_id)
         body = {
@@ -259,6 +296,9 @@ def create_app(config_overrides: dict[str, Any] | None = None) -> Flask:
             "usage": {
                 "stream_count": stream_count,
                 "stream_limit": plan.monthly_stream_limit,
+                # total_limit is null on paid plans — they have no lifetime cap (#91)
+                "total_count": total_count,
+                "total_limit": plan.total_stream_limit,
             },
             "subscription": {
                 "status": subscription.status,

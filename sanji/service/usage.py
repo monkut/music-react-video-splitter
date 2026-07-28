@@ -1,7 +1,12 @@
-"""Monthly stream usage counter — DynamoDB-backed, atomic increment (issue #5).
+"""Stream usage counters — DynamoDB-backed, atomic increment (issues #5, #91).
 
 Table key: (user_id, period_key) where period_key = "YYYY-MM" (calendar month UTC).
 Atomic ADD prevents double-counting under concurrent job submissions.
+
+The free tier also carries a lifetime ceiling (#91), stored in the same table
+under the sentinel period key ``TOTAL``. Real period keys are always "YYYY-MM",
+so the sentinel can never be produced by a month rollover — which is what lets
+both counters share one table with no schema change.
 """
 
 import os
@@ -12,6 +17,9 @@ import boto3
 
 USAGE_TABLE_ENV = "SANJI_USAGE_TABLE"
 DEFAULT_USAGE_TABLE = "sanji-usage"
+
+# Sentinel period key holding the never-resetting lifetime run count (#91).
+TOTAL_PERIOD_KEY = "TOTAL"
 
 
 def _current_period() -> str:
@@ -47,3 +55,11 @@ class UsageStore:
 
     def increment_current_count(self, user_id: str) -> int:
         return self.increment_monthly_count(user_id, _current_period())
+
+    def get_total_count(self, user_id: str) -> int:
+        """Lifetime run count across every period (#91)."""
+        return self.get_monthly_count(user_id, TOTAL_PERIOD_KEY)
+
+    def increment_total_count(self, user_id: str) -> int:
+        """Atomically increment the lifetime count; returns the new value."""
+        return self.increment_monthly_count(user_id, TOTAL_PERIOD_KEY)
