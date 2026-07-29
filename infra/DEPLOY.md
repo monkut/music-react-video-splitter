@@ -150,6 +150,29 @@ including `SANJI_USERS_TABLE` and `SANJI_USAGE_TABLE`. If absent, the code falls
 stage-less defaults (`sanji-users`, `sanji-usage`) that do not exist, and **every
 authenticated request 401s** (#77). The tracked example now includes them.
 
+### One-time: backfill the lifetime usage counter (#91)
+
+The free tier carries a 24-run lifetime ceiling stored in the usage table under the
+sentinel period key `TOTAL`. Users created **before** that change have monthly rows but no
+`TOTAL` row, so without this backfill every existing user silently restarts at zero.
+
+Run it once, as part of the deploy that first ships the lifetime cap:
+
+```bash
+# report what would change, write nothing
+uv run python scripts/backfill_total_usage.py --table sanji-usage-dev
+
+# apply
+uv run python scripts/backfill_total_usage.py --table sanji-usage-dev --apply
+```
+
+The write is a `SET` of the summed monthly rows, so re-running is idempotent (it will not
+double a total). For the same reason an increment landing between the scan and the write
+can be overwritten — run it before the new code serves traffic, or re-run it afterwards.
+
+No infrastructure change is required: the counter reuses the existing
+`(user_id, period_key)` key schema.
+
 ### Google OAuth — required before first login
 
 The API's `/auth/google` login flow requires three env vars in `zappa_settings.json`. Without them, the backend redirects to Google with no `client_id` and Google returns **Error 400: missing required parameter: client_id**.

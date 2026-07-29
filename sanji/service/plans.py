@@ -23,6 +23,9 @@ class Plan(BaseModel):
     name: str
     price_cents: int
     monthly_stream_limit: int  # hard cap on all tiers
+    # Lifetime ceiling across all months (#91). None = no lifetime cap, which is
+    # what every paid tier means — a sentinel large number would read as a cap.
+    total_stream_limit: int | None = None
     max_video_duration_seconds: int
     stripe_price_id: str | None = None
     active: bool = True
@@ -34,6 +37,7 @@ PLANS: tuple[Plan, ...] = (
         name="Free",
         price_cents=0,
         monthly_stream_limit=2,
+        total_stream_limit=24,
         max_video_duration_seconds=MAX_DURATION_SECONDS,
     ),
     Plan(
