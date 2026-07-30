@@ -12,6 +12,12 @@ Parameters:
     Type: String
     Default: dev
 
+  ProjectId:
+    Type: String
+    Description: >-
+      Kippo project UUID for cost allocation tagging.
+      Register at https://mnzyopnb1c.execute-api.us-west-2.amazonaws.com/dev/admin/ to obtain.
+
   WorkerImageUri:
     Type: String
     Description: ECR image URI for the sanji worker (e.g. <acct>.dkr.ecr.<region>.amazonaws.com/sanji-worker:dev)
@@ -133,6 +139,9 @@ Resources:
         Subnets: !Ref SubnetIds
         SecurityGroupIds:
           - !Ref SecurityGroupId
+      Tags:
+        ProjectId: !Ref ProjectId
+        Project: kanpaiko
 
   WorkerJobQueue:
     Type: AWS::Batch::JobQueue
@@ -221,6 +230,11 @@ Resources:
     Properties:
       LogGroupName: !Sub '/sanji/batch-failures-${Stage}'
       RetentionInDays: 14
+      Tags:
+        - Key: ProjectId
+          Value: !Ref ProjectId
+        - Key: Project
+          Value: kanpaiko
 
 Outputs:
 

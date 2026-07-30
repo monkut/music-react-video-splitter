@@ -17,6 +17,12 @@ Parameters:
     Type: String
     Default: sanji
 
+  ProjectId:
+    Type: String
+    Description: >-
+      Kippo project UUID for cost allocation tagging.
+      Register at https://mnzyopnb1c.execute-api.us-west-2.amazonaws.com/dev/admin/ to obtain.
+
 Resources:
 
   # ---- SaaS DynamoDB tables (keys mirror sanji/service/{users,billing,usage}.py) ----
@@ -41,6 +47,11 @@ Resources:
               KeyType: HASH
           Projection:
             ProjectionType: ALL
+      Tags:
+        - Key: ProjectId
+          Value: !Ref ProjectId
+        - Key: Project
+          Value: kanpaiko
 
   SubscriptionsTable:
     Type: AWS::DynamoDB::Table
@@ -62,6 +73,11 @@ Resources:
               KeyType: HASH
           Projection:
             ProjectionType: ALL
+      Tags:
+        - Key: ProjectId
+          Value: !Ref ProjectId
+        - Key: Project
+          Value: kanpaiko
 
   WebhookEventsTable:
     Type: AWS::DynamoDB::Table
@@ -74,6 +90,11 @@ Resources:
       KeySchema:
         - AttributeName: stripe_event_id
           KeyType: HASH
+      Tags:
+        - Key: ProjectId
+          Value: !Ref ProjectId
+        - Key: Project
+          Value: kanpaiko
 
   UsageTable:
     Type: AWS::DynamoDB::Table
@@ -90,6 +111,11 @@ Resources:
           KeyType: HASH
         - AttributeName: period_key
           KeyType: RANGE
+      Tags:
+        - Key: ProjectId
+          Value: !Ref ProjectId
+        - Key: Project
+          Value: kanpaiko
 
   # ---- S3 results bucket ----
   # The worker writes segments + manifest + result.json here (result.json last =
@@ -112,6 +138,11 @@ Resources:
           - Id: expire-dev-results
             Status: Enabled
             ExpirationInDays: 7
+      Tags:
+        - Key: ProjectId
+          Value: !Ref ProjectId
+        - Key: Project
+          Value: kanpaiko
 
   # ---- S3 uploads bucket (#65) ----
   # Users PUT their source VODs here via presigned URLs issued by the API; the
@@ -130,6 +161,11 @@ Resources:
         BlockPublicPolicy: true
         IgnorePublicAcls: true
         RestrictPublicBuckets: true
+      Tags:
+        - Key: ProjectId
+          Value: !Ref ProjectId
+        - Key: Project
+          Value: kanpaiko
       CorsConfiguration:
         CorsRules:
           - AllowedMethods: [PUT]
