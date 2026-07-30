@@ -97,7 +97,7 @@ aws sqs get-queue-url --queue-name sanji-sdjobs-eph-dev --region us-west-2 --que
 aws cloudformation deploy \
   --template-file infra/sanji-resources.sam.yaml \
   --stack-name sanji-resources-dev \
-  --parameter-overrides Stage=dev
+  --parameter-overrides Stage=dev ProjectId=<kippo-uuid>
 ```
 
 Capture the bucket names the API + worker need:
@@ -126,6 +126,7 @@ aws cloudformation deploy \
   --capabilities CAPABILITY_IAM \
   --parameter-overrides \
     Stage=dev \
+    ProjectId=<kippo-uuid> \
     WorkerImageUri="$IMAGE_URI" \
     SubnetIds="$SUBNET_IDS" \
     SecurityGroupId="$SG_ID"
@@ -139,7 +140,15 @@ name — steps 1 & 2 must exist first.
 ```bash
 uv sync --extra api --no-dev      # --no-dev is REQUIRED: the dev group (pyright/moto/hypothesis) busts Lambda's 250 MB unzipped limit (#77)
 uv run zappa deploy dev           # first deploy;  use `zappa update dev` thereafter
+
+uv sync --all-extras              # RESTORE the local env afterwards — see below
 ```
+
+> **Restore your local environment after deploying.** `--no-dev` prunes pytest, moto,
+> ruff, and pyright out of `.venv`, and `--extra api` drops the ML/worker extras. Until
+> you re-sync, the test suite fails at *collection* with `ModuleNotFoundError: No module
+> named 'numpy'` / `'structlog'` — which looks like a broken checkout, not a side effect
+> of the deploy you just ran. `uv sync --all-extras` puts it back.
 
 Zappa owns the results-bucket `s3:ObjectCreated:*` (suffix `result.json`) →
 `handle_result_event` notification via its `events` binding in `zappa_settings.json` —

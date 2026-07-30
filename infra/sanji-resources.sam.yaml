@@ -19,9 +19,7 @@ Parameters:
 
   ProjectId:
     Type: String
-    Description: >-
-      Kippo project UUID for cost allocation tagging.
-      Register at https://mnzyopnb1c.execute-api.us-west-2.amazonaws.com/dev/admin/ to obtain.
+    Description: Kippo project UUID for cost allocation tagging.
 
 Resources:
 
