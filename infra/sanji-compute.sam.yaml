@@ -12,6 +12,10 @@ Parameters:
     Type: String
     Default: dev
 
+  ProjectId:
+    Type: String
+    Description: Kippo project UUID for cost allocation tagging.
+
   WorkerImageUri:
     Type: String
     Description: ECR image URI for the sanji worker (e.g. <acct>.dkr.ecr.<region>.amazonaws.com/sanji-worker:dev)
@@ -133,6 +137,9 @@ Resources:
         Subnets: !Ref SubnetIds
         SecurityGroupIds:
           - !Ref SecurityGroupId
+      Tags:
+        ProjectId: !Ref ProjectId
+        Project: kanpaiko
 
   WorkerJobQueue:
     Type: AWS::Batch::JobQueue
@@ -142,12 +149,18 @@ Resources:
       ComputeEnvironmentOrder:
         - Order: 1
           ComputeEnvironment: !Ref WorkerComputeEnvironment
+      Tags:
+        ProjectId: !Ref ProjectId
+        Project: kanpaiko
 
   WorkerJobDefinition:
     Type: AWS::Batch::JobDefinition
     Properties:
       Type: container
       PlatformCapabilities: [FARGATE]
+      Tags:
+        ProjectId: !Ref ProjectId
+        Project: kanpaiko
       ContainerProperties:
         Image: !Ref WorkerImageUri
         JobRoleArn: !GetAtt WorkerTaskRole.Arn
@@ -182,6 +195,9 @@ Resources:
     Properties:
       Name: !Sub 'sanji-jobs-${Stage}'
       RoleArn: !GetAtt PipeRole.Arn
+      Tags:
+        ProjectId: !Ref ProjectId
+        Project: kanpaiko
       Source: !Sub 'arn:aws:sqs:${AWS::Region}:${AWS::AccountId}:${JobsQueueName}'
       SourceParameters:
         SqsQueueParameters:
@@ -215,12 +231,22 @@ Resources:
       Targets:
         - Id: log
           Arn: !GetAtt BatchFailureLogGroup.Arn
+      Tags:
+        - Key: ProjectId
+          Value: !Ref ProjectId
+        - Key: Project
+          Value: kanpaiko
 
   BatchFailureLogGroup:
     Type: AWS::Logs::LogGroup
     Properties:
       LogGroupName: !Sub '/sanji/batch-failures-${Stage}'
       RetentionInDays: 14
+      Tags:
+        - Key: ProjectId
+          Value: !Ref ProjectId
+        - Key: Project
+          Value: kanpaiko
 
 Outputs:
 
